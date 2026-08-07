@@ -97,6 +97,8 @@
   <script>
     const GOOGLE_CLIENT_ID = '945095339930-04avu1a813aequodkubqosvtl8kjb724.apps.googleusercontent.com';
     const AUTH_STORAGE_KEY = 'nanochat_auth_user';
+    const LOCAL_DEV_SUB = 'local-dev-sub-0000';
+    const isLocalDev = ['localhost', '127.0.0.1', ''].indexOf(window.location.hostname) !== -1;
 
     const loginStatus = document.getElementById('loginStatus');
     const loginWarning = document.getElementById('loginWarning');
@@ -158,6 +160,17 @@
     window.addEventListener('load', () => {
       try {
         if (localStorage.getItem(AUTH_STORAGE_KEY)) {
+          window.location.replace('index.html');
+          return;
+        }
+        if (isLocalDev) {
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+            name: 'Dev Local',
+            email: 'dev@localhost',
+            picture: '',
+            sub: LOCAL_DEV_SUB
+          }));
+          loginStatus.textContent = 'Modo local: sesión de desarrollo creada. Redirigiendo...';
           window.location.replace('index.html');
           return;
         }
