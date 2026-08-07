@@ -124,7 +124,8 @@
       const user = {
         name: payload.name || payload.email || 'Usuario',
         email: payload.email || '',
-        picture: payload.picture || ''
+        picture: payload.picture || '',
+        sub: payload.sub || ''
       };
       try {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));

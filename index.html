@@ -1088,11 +1088,58 @@
     let openAiApiKey = '';
     let openAiConnected = false;
     let pendingPrivacyChatId = null;
+    let userCryptoKey = null;
     const scrollOverrides = {};
 
     const STORAGE_PREFIX = 'nanochat_chat_';
     const API_KEY_STORAGE = 'nanochat_openai_key';
     const PRIVACY_PASSWORD_STORAGE = 'nanochat_privacy_password';
+    const CRYPTO_SALT = 'nanochat-local-salt-v1';
+
+    async function deriveUserCryptoKey(sub) {
+      if (!sub || !window.crypto || !window.crypto.subtle) return null;
+      const enc = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw', enc.encode(sub), { name: 'PBKDF2' }, false, ['deriveKey']
+      );
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: enc.encode(CRYPTO_SALT), iterations: 100000, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+    }
+
+    async function encryptForUser(plaintext) {
+      if (!userCryptoKey) return plaintext;
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const enc = new TextEncoder();
+      const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, userCryptoKey, enc.encode(plaintext));
+      const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+      combined.set(iv, 0);
+      combined.set(new Uint8Array(ciphertext), iv.length);
+      let binary = '';
+      combined.forEach((byte) => { binary += String.fromCharCode(byte); });
+      return 'enc:' + btoa(binary);
+    }
+
+    async function decryptForUser(stored) {
+      if (!stored) return '';
+      if (stored.indexOf('enc:') !== 0) return stored;
+      if (!userCryptoKey) return '';
+      try {
+        const binary = atob(stored.slice(4));
+        const combined = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) combined[i] = binary.charCodeAt(i);
+        const iv = combined.slice(0, 12);
+        const data = combined.slice(12);
+        const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, userCryptoKey, data);
+        return new TextDecoder().decode(plaintext);
+      } catch (error) {
+        return '';
+      }
+    }
 
     function storageKey(name) {
       return STORAGE_PREFIX + name;
@@ -1143,17 +1190,18 @@
       } catch (error) {}
     }
 
-    function loadSavedApiKey() {
+    async function loadSavedApiKey() {
       try {
-        return localStorage.getItem(API_KEY_STORAGE) || '';
+        const raw = localStorage.getItem(API_KEY_STORAGE) || '';
+        return await decryptForUser(raw);
       } catch (error) {
         return '';
       }
     }
 
-    function saveApiKey(key) {
+    async function saveApiKey(key) {
       try {
-        localStorage.setItem(API_KEY_STORAGE, key);
+        localStorage.setItem(API_KEY_STORAGE, await encryptForUser(key));
       } catch (error) {}
     }
 
@@ -1165,17 +1213,18 @@
       }
     }
 
-    function loadPrivacyPassword() {
+    async function loadPrivacyPassword() {
       try {
-        return localStorage.getItem(PRIVACY_PASSWORD_STORAGE) || '';
+        const raw = localStorage.getItem(PRIVACY_PASSWORD_STORAGE) || '';
+        return await decryptForUser(raw);
       } catch (error) {
         return '';
       }
     }
 
-    function savePrivacyPassword(password) {
+    async function savePrivacyPassword(password) {
       try {
-        localStorage.setItem(PRIVACY_PASSWORD_STORAGE, password);
+        localStorage.setItem(PRIVACY_PASSWORD_STORAGE, await encryptForUser(password));
       } catch (error) {}
     }
 
@@ -1192,7 +1241,7 @@
       pendingPrivacyChatId = null;
     }
 
-    function savePrivacyPasswordFromModal() {
+    async function savePrivacyPasswordFromModal() {
       const pw = privacyPasswordInput.value;
       const confirmPw = privacyPasswordConfirm.value;
       if (!pw) {
@@ -1203,7 +1252,7 @@
         privacyModalStatus.textContent = 'Las contraseñas no coinciden.';
         return;
       }
-      savePrivacyPassword(pw);
+      await savePrivacyPassword(pw);
       if (pendingPrivacyChatId) {
         const chat = chatState.find(item => item.id === pendingPrivacyChatId);
         if (chat) {
@@ -1665,9 +1714,9 @@
         const privacyUnlockBtn = panel.querySelector('.privacy-unlock-btn');
         if (privacyPasswordInput && privacyUnlockBtn) {
           privacyPasswordInput.addEventListener('pointerdown', (event) => event.stopPropagation());
-          const attemptUnlock = () => {
+          const attemptUnlock = async () => {
             const entered = privacyPasswordInput.value;
-            const saved = loadPrivacyPassword();
+            const saved = await loadPrivacyPassword();
             if (saved && entered === saved) {
               chat.unlocked = true;
               renderChats();
@@ -2136,7 +2185,7 @@
         return;
       }
       openAiApiKey = next;
-      saveApiKey(next);
+      await saveApiKey(next);
       setConnectedState(true);
       connectStatus.textContent = 'Listo para chatear';
     }
@@ -2441,10 +2490,18 @@
       }
     });
 
-    applyAuthUser();
-    openAiApiKey = loadSavedApiKey();
-    initChats();
-    setConnectedState(false);
+    async function bootstrap() {
+      applyAuthUser();
+      const user = loadAuthUser();
+      if (user && user.sub) {
+        userCryptoKey = await deriveUserCryptoKey(user.sub);
+      }
+      openAiApiKey = await loadSavedApiKey();
+      initChats();
+      setConnectedState(false);
+    }
+
+    bootstrap();
   </script>
 </body>
 </html>
