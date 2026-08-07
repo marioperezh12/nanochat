@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NanoChat · Iniciar sesión</title>
+  <style>
+    :root {
+      --bg0: #061015;
+      --bg1: #07161d;
+      --bg2: #0a1d24;
+      --border: rgba(159, 229, 255, 0.12);
+      --text: #e8fbff;
+      --muted: #85a7b4;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 14%, rgba(65, 214, 199, 0.14), transparent 18%),
+        radial-gradient(circle at 88% 12%, rgba(46, 143, 255, 0.14), transparent 16%),
+        radial-gradient(circle at 50% 100%, rgba(65, 214, 199, 0.08), transparent 22%),
+        linear-gradient(180deg, var(--bg0), var(--bg1) 48%, var(--bg2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-card {
+      width: 340px;
+      max-width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(10, 23, 29, 0.85);
+      box-shadow: var(--shadow);
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      text-align: center;
+    }
+    .brand-mark {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: #17313a;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--text);
+    }
+    .login-card h1 { margin: 0; font-size: 1.05rem; }
+    .login-card p { margin: 0; font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+    #googleSignInButton { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+    .login-status {
+      font-size: 0.76rem;
+      color: var(--muted);
+      min-height: 1em;
+    }
+    .login-warning {
+      font-size: 0.74rem;
+      color: #ffd84d;
+      background: rgba(255, 216, 77, 0.08);
+      border: 1px solid rgba(255, 216, 77, 0.3);
+      border-radius: 6px;
+      padding: 10px 12px;
+      line-height: 1.5;
+      text-align: left;
+    }
+    .login-warning code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      background: rgba(0,0,0,0.3);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand-mark">N</div>
+    <h1>NanoChat</h1>
+    <p>Inicia sesión con tu cuenta de Google para continuar.</p>
+    <div id="googleSignInButton"></div>
+    <div id="loginStatus" class="login-status"></div>
+    <div id="loginWarning" class="login-warning" hidden>
+      Falta configurar el <code>GOOGLE_CLIENT_ID</code> en <code>login.html</code>. Crea un OAuth Client ID (tipo "Web application")
+      en Google Cloud Console → APIs &amp; Services → Credentials, agrega este origen a "Authorized JavaScript origins",
+      y reemplaza el valor de <code>GOOGLE_CLIENT_ID</code> en el script de esta página.
+    </div>
+  </div>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    const GOOGLE_CLIENT_ID = '945095339930-04avu1a813aequodkubqosvtl8kjb724.apps.googleusercontent.com';
+    const AUTH_STORAGE_KEY = 'nanochat_auth_user';
+
+    const loginStatus = document.getElementById('loginStatus');
+    const loginWarning = document.getElementById('loginWarning');
+    const googleSignInButton = document.getElementById('googleSignInButton');
+
+    function decodeJwtPayload(token) {
+      try {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          atob(base64).split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+        );
+        return JSON.parse(jsonPayload);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function handleCredentialResponse(response) {
+      const payload = decodeJwtPayload(response.credential);
+      if (!payload) {
+        loginStatus.textContent = 'No se pudo procesar la autenticación.';
+        return;
+      }
+      const user = {
+        name: payload.name || payload.email || 'Usuario',
+        email: payload.email || '',
+        picture: payload.picture || ''
+      };
+      try {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+      } catch (error) {}
+      loginStatus.textContent = 'Autenticado. Redirigiendo...';
+      window.location.href = 'index.html';
+    }
+
+    function initGoogleSignIn() {
+      if (GOOGLE_CLIENT_ID.indexOf('REEMPLAZA') !== -1) {
+        loginWarning.hidden = false;
+        return;
+      }
+      if (!window.google || !window.google.accounts || !window.google.accounts.id) {
+        loginStatus.textContent = 'No se pudo cargar Google Identity Services.';
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleCredentialResponse
+      });
+      window.google.accounts.id.renderButton(googleSignInButton, {
+        theme: 'filled_black',
+        size: 'large',
+        shape: 'pill',
+        text: 'signin_with'
+      });
+    }
+
+    window.addEventListener('load', () => {
+      try {
+        if (localStorage.getItem(AUTH_STORAGE_KEY)) {
+          window.location.replace('index.html');
+          return;
+        }
+      } catch (error) {}
+      initGoogleSignIn();
+    });
+  </script>
+</body>
+</html>

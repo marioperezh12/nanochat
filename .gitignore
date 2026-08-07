@@ -1,0 +1,4 @@
+node_modules/
+.claude/
+nanochat-check.js
+.nanochat-check.js
