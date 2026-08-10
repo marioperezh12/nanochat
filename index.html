@@ -1839,23 +1839,6 @@
       }).join('\n\n');
     }
 
-    function extractPinnedCodeBlocks(messages, pinnedIndices) {
-      const sortedIndices = getPinnedContextIndices(messages, pinnedIndices);
-      const blocks = [];
-      const codeRe = /```[a-zA-Z0-9]*\n?([\s\S]*?)```/g;
-      sortedIndices.forEach(idx => {
-        const message = messages[idx];
-        const raw = message.content || message.rawText || '';
-        let match;
-        codeRe.lastIndex = 0;
-        while ((match = codeRe.exec(raw))) {
-          const code = match[1].replace(/\n$/, '').trim();
-          if (code && blocks.indexOf(code) === -1) blocks.push(code);
-        }
-      });
-      return blocks;
-    }
-
     async function handleResumenCommand(chat) {
       const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
       const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
@@ -1868,7 +1851,6 @@
         return;
       }
       const transcript = buildPinnedConversationText(activeMessages, activePinnedIndices);
-      const codeBlocks = extractPinnedCodeBlocks(activeMessages, activePinnedIndices);
       const engineName = engineLabel(selectedEngine);
       const activeKey = getEngineKey(selectedEngine);
       if (!activeKey) {
@@ -1878,9 +1860,17 @@
       chat.statusMessage = 'Generando resumen...';
       renderChats();
       try {
-        const summaryInstruction = codeBlocks.length
-          ? 'Resume de forma clara y concisa la siguiente conversación. Es muy importante que conserves textualmente, sin parafrasear ni resumir, cualquier comando o bloque de código que aparezca:\n\n'
-          : 'Resume de forma clara y concisa la siguiente conversación:\n\n';
+        const summaryInstruction = 'Resume la siguiente conversación siguiendo EXACTAMENTE esta plantilla de formato:\n\n'
+          + '[Párrafo breve de 1-2 frases con la intención general de la conversación, de qué se trata todo]\n\n'
+          + '- [Punto o paso 1, redactado como intención/acción directa, ej: "Instalar imagen de YOLOv5"]\n'
+          + '```\n[comando exacto si el punto 1 tiene uno, en su propia línea, nunca mezclado con el texto]\n```\n'
+          + '- [Punto o paso 2]\n'
+          + '```\n[comando del punto 2, si aplica]\n```\n\n'
+          + 'Reglas: cada bloque de comando va SIEMPRE en su propia línea encerrado entre triple backtick (```), nunca dentro de la misma línea del punto ni como texto plano. '
+          + 'Si un punto no tiene comando, omite el bloque para ese punto. '
+          + 'No uses el formato "Usuario: ..." ni "Asistente: ...". '
+          + 'No incluyas comentarios sobre lo que hizo el asistente si no aportan información nueva (por ejemplo, evita frases como "Asistente: proporciona el comando").\n\n'
+          + 'Conversación a resumir:\n\n';
         const engineMessages = [
           { role: 'user', content: summaryInstruction + transcript }
         ];
@@ -1889,10 +1879,6 @@
         else if (selectedEngine === 'groq') reply = await callGroq(engineMessages, activeKey);
         else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
         else reply = await callOpenAI(engineMessages, activeKey);
-
-        if (codeBlocks.length) {
-          reply += '\n\n**Comandos mencionados:**\n\n' + codeBlocks.map(code => '```\n' + code + '\n```').join('\n\n');
-        }
 
         const versionNumber = chatVersions.length + 1;
         chat.versions = chatVersions;
