@@ -2581,6 +2581,7 @@
           }
         });
         chatInput.addEventListener('input', () => {
+          chat.draftText = chatInput.value;
           chatInput.style.height = 'auto';
           chatInput.style.height = chatInput.scrollHeight + 'px';
         });
@@ -2591,8 +2592,15 @@
             chatInput.focus();
             chatInput.select();
           });
-        } else if (justGainedFocus) {
-          requestAnimationFrame(() => chatInput.focus());
+        } else {
+          if (chat.draftText) {
+            chatInput.value = chat.draftText;
+            chatInput.style.height = 'auto';
+            chatInput.style.height = chatInput.scrollHeight + 'px';
+          }
+          if (justGainedFocus) {
+            requestAnimationFrame(() => chatInput.focus());
+          }
         }
 
         const attachWrap = panel.querySelector('.panel-attach');
@@ -3409,6 +3417,7 @@
       chat.focused = true;
       chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
       input.value = '';
+      chat.draftText = '';
       saveChatToStorage(chat);
       renderChats();
 
