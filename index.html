@@ -1770,24 +1770,10 @@
       renderChats();
     }
 
-    function buildPinnedShareText(chat) {
-      const includedIndices = new Set();
-      chat.pinnedIndices.forEach(idx => {
-        const msg = chat.messages[idx];
-        if (!msg || msg.typing) return;
-        if (msg.role === 'assistant') {
-          const prev = chat.messages[idx - 1];
-          if (prev && prev.role === 'user') includedIndices.add(idx - 1);
-          includedIndices.add(idx);
-        } else {
-          includedIndices.add(idx);
-          const next = chat.messages[idx + 1];
-          if (next && next.role === 'assistant' && !next.typing) includedIndices.add(idx + 1);
-        }
-      });
-      const sortedIndices = Array.from(includedIndices).sort((a, b) => a - b);
-      const messages = sortedIndices.map(idx => {
-        const message = chat.messages[idx];
+    function buildPinnedShareText(messages, pinnedIndices, chatName, responseMode) {
+      const sortedIndices = getPinnedContextIndices(messages, pinnedIndices);
+      const exportMessages = sortedIndices.map(idx => {
+        const message = messages[idx];
         return {
           role: message.role,
           content: message.content,
@@ -1797,27 +1783,27 @@
       });
       const newPinnedIndices = [];
       sortedIndices.forEach((origIdx, newIdx) => {
-        if (chat.pinnedIndices.includes(origIdx)) newPinnedIndices.push(newIdx);
+        if (pinnedIndices.includes(origIdx)) newPinnedIndices.push(newIdx);
       });
       return JSON.stringify({
-        name: chat.name + ' (anclados)',
-        messages,
-        responseMode: chat.responseMode,
+        name: chatName + ' (anclados)',
+        messages: exportMessages,
+        responseMode,
         pinnedIndices: newPinnedIndices
       }, null, 2);
     }
 
-    function buildChatExport(chat) {
+    function buildChatExport(messages, pinnedIndices, chatName, responseMode) {
       return JSON.stringify({
-        name: chat.name,
-        messages: chat.messages.filter(message => !message.typing).map(message => ({
+        name: chatName,
+        messages: messages.filter(message => !message.typing).map(message => ({
           role: message.role,
           content: message.content,
           display: message.display,
           rawText: message.rawText
         })),
-        responseMode: chat.responseMode,
-        pinnedIndices: chat.pinnedIndices
+        responseMode,
+        pinnedIndices
       }, null, 2);
     }
 
@@ -1825,7 +1811,7 @@
       return 'v' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     }
 
-    function buildPinnedConversationText(messages, pinnedIndices) {
+    function getPinnedContextIndices(messages, pinnedIndices) {
       const includedIndices = new Set();
       pinnedIndices.forEach(idx => {
         const msg = messages[idx];
@@ -1840,13 +1826,34 @@
           if (next && next.role === 'assistant' && !next.typing) includedIndices.add(idx + 1);
         }
       });
-      const sortedIndices = Array.from(includedIndices).sort((a, b) => a - b);
+      return Array.from(includedIndices).sort((a, b) => a - b);
+    }
+
+    function buildPinnedConversationText(messages, pinnedIndices) {
+      const sortedIndices = getPinnedContextIndices(messages, pinnedIndices);
       return sortedIndices.map(idx => {
         const message = messages[idx];
         const raw = (message.rawText || message.content || '').trim();
         const label = message.role === 'user' ? 'Usuario' : 'Asistente';
         return label + ': ' + raw;
       }).join('\n\n');
+    }
+
+    function extractPinnedCodeBlocks(messages, pinnedIndices) {
+      const sortedIndices = getPinnedContextIndices(messages, pinnedIndices);
+      const blocks = [];
+      const codeRe = /```[a-zA-Z0-9]*\n?([\s\S]*?)```/g;
+      sortedIndices.forEach(idx => {
+        const message = messages[idx];
+        const raw = message.content || message.rawText || '';
+        let match;
+        codeRe.lastIndex = 0;
+        while ((match = codeRe.exec(raw))) {
+          const code = match[1].replace(/\n$/, '').trim();
+          if (code && blocks.indexOf(code) === -1) blocks.push(code);
+        }
+      });
+      return blocks;
     }
 
     async function handleResumenCommand(chat) {
@@ -1861,6 +1868,7 @@
         return;
       }
       const transcript = buildPinnedConversationText(activeMessages, activePinnedIndices);
+      const codeBlocks = extractPinnedCodeBlocks(activeMessages, activePinnedIndices);
       const engineName = engineLabel(selectedEngine);
       const activeKey = getEngineKey(selectedEngine);
       if (!activeKey) {
@@ -1870,14 +1878,21 @@
       chat.statusMessage = 'Generando resumen...';
       renderChats();
       try {
+        const summaryInstruction = codeBlocks.length
+          ? 'Resume de forma clara y concisa la siguiente conversación. Es muy importante que conserves textualmente, sin parafrasear ni resumir, cualquier comando o bloque de código que aparezca:\n\n'
+          : 'Resume de forma clara y concisa la siguiente conversación:\n\n';
         const engineMessages = [
-          { role: 'user', content: 'Resume de forma clara y concisa la siguiente conversación:\n\n' + transcript }
+          { role: 'user', content: summaryInstruction + transcript }
         ];
         let reply;
         if (selectedEngine === 'gemini') reply = await callGemini(engineMessages, activeKey);
         else if (selectedEngine === 'groq') reply = await callGroq(engineMessages, activeKey);
         else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
         else reply = await callOpenAI(engineMessages, activeKey);
+
+        if (codeBlocks.length) {
+          reply += '\n\n**Comandos mencionados:**\n\n' + codeBlocks.map(code => '```\n' + code + '\n```').join('\n\n');
+        }
 
         const versionNumber = chatVersions.length + 1;
         chat.versions = chatVersions;
@@ -2334,8 +2349,8 @@
               <div class="panel-share">
                 <button type="button" class="share-toggle" title="Compartir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button>
                 <div class="share-menu">
-                  <button type="button" class="share-item" data-share="pinned">Compartir mensajes anclados</button>
-                  <button type="button" class="share-item" data-share="all">Compartir todo el chat</button>
+                  <button type="button" class="share-item" data-share="pinned">Compartir mensajes anclados${viewingVersion ? ' (' + escapeHtml(viewingVersion.label) + ')' : ''}</button>
+                  <button type="button" class="share-item" data-share="all">Compartir todo el chat${viewingVersion ? ' (' + escapeHtml(viewingVersion.label) + ')' : ''}</button>
                 </div>
               </div>
               <div class="panel-console">
@@ -2840,7 +2855,10 @@
           if (!item) return;
           event.stopPropagation();
           const kind = item.getAttribute('data-share');
-          const text = kind === 'pinned' ? buildPinnedShareText(chat) : buildChatExport(chat);
+          const shareName = viewingVersion ? (chat.name + ' (' + viewingVersion.label + ')') : chat.name;
+          const text = kind === 'pinned'
+            ? buildPinnedShareText(activeMessages, activePinnedIndices, shareName, chat.responseMode)
+            : buildChatExport(activeMessages, activePinnedIndices, shareName, chat.responseMode);
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).catch(() => {});
           }
