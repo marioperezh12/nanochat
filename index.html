@@ -88,6 +88,8 @@
       background: rgba(6, 18, 24, 0.92);
       border-bottom: 1px solid var(--border);
       backdrop-filter: blur(16px);
+      position: relative;
+      z-index: 50;
     }
 
     .engine-select { display: flex; align-items: center; gap: 6px; flex: none; }
@@ -211,7 +213,9 @@
     .mode-toggle,
     .pins-toggle,
     .history-toggle,
-    .share-toggle {
+    .share-toggle,
+    .search-toggle,
+    .console-toggle {
       width: 26px;
       height: 26px;
       padding: 0;
@@ -577,6 +581,23 @@
       min-height: 0;
       overflow-y: hidden;
     }
+    .scroll-to-bottom-btn {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 58px;
+      z-index: 12;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+      padding: 6px 12px;
+      font-size: 0.74rem;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+    }
+    .scroll-to-bottom-btn[hidden] { display: none; }
+    .scroll-to-bottom-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
     .message {
       border: 1px solid var(--border);
       border-radius: 4px;
@@ -685,6 +706,65 @@
     }
     .panel-pins.open .pins-menu { display: grid; gap: 4px; }
 
+    .panel-search { position: relative; flex: none; }
+    .search-bar {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(7, 18, 22, 0.98);
+      box-shadow: var(--shadow);
+      z-index: 25;
+      min-width: 220px;
+    }
+    .panel-search.open .search-bar { display: flex; }
+    .search-input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 0.78rem;
+      outline: none;
+    }
+    .search-prev,
+    .search-next {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      color: var(--text);
+      border-radius: 4px;
+      width: 26px;
+      height: 26px;
+      cursor: pointer;
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    mark.search-highlight {
+      background: #ffd84d;
+      color: #1a1200;
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+    .message.user.search-flash { animation: searchFlashUser 0.25s ease-in-out 3; }
+    .message.assistant.search-flash { animation: searchFlashAssistant 0.25s ease-in-out 3; }
+    @keyframes searchFlashUser {
+      0%, 100% { box-shadow: none; border-color: rgba(65, 214, 199, 0.32); }
+      50% { box-shadow: 0 0 0 3px rgba(65, 214, 199, 0.55); border-color: #41d6c7; }
+    }
+    @keyframes searchFlashAssistant {
+      0%, 100% { box-shadow: none; border-color: rgba(46, 143, 255, 0.25); }
+      50% { box-shadow: 0 0 0 3px rgba(46, 143, 255, 0.55); border-color: #2e8fff; }
+    }
+
     .panel-share { position: relative; flex: none; }
     .share-toggle {
       border: 1px solid var(--border);
@@ -696,6 +776,7 @@
       justify-content: center;
     }
     .share-toggle svg { display: block; }
+    .console-toggle svg { display: block; }
     .share-menu {
       position: absolute;
       right: 0;
@@ -722,6 +803,148 @@
       cursor: pointer;
     }
     .share-item:hover { background: rgba(255,255,255,0.06); }
+
+    .panel-console { position: relative; flex: none; }
+    .console-toggle {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      color: var(--muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .console-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      min-width: 220px;
+      max-height: 260px;
+      overflow: auto;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(7, 18, 22, 0.98);
+      box-shadow: var(--shadow);
+      display: none;
+      z-index: 25;
+    }
+    .panel-console.open .console-menu { display: grid; gap: 4px; }
+    .console-item {
+      width: 100%;
+      border: none;
+      background: none;
+      color: var(--text);
+      border-radius: 4px;
+      padding: 7px 8px;
+      font-size: 0.78rem;
+      text-align: left;
+      cursor: pointer;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .console-item:hover { background: rgba(255,255,255,0.06); }
+    .console-item-desc {
+      display: block;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+    .temporal-toggle.active { color: #ffd84d; }
+
+    .version-list {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .version-list-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--muted);
+      padding: 2px 2px 6px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2px;
+    }
+    .version-list-close {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      cursor: pointer;
+      flex: none;
+    }
+    .version-list-item {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 9px 10px;
+      font-size: 0.8rem;
+      text-align: left;
+      cursor: pointer;
+    }
+    .version-list-item:hover { background: rgba(255,255,255,0.08); }
+    .version-list-item.active { border-color: #41d6c7; color: #41d6c7; }
+
+    .message.summary-message {
+      max-width: 100%;
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+      background: rgba(168, 85, 247, 0.14);
+      border-color: rgba(168, 85, 247, 0.4);
+    }
+    .message.temporal-notice {
+      max-width: 100%;
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+      background: rgba(255, 216, 77, 0.1);
+      border-color: rgba(255, 216, 77, 0.35);
+      color: var(--muted);
+      font-size: 0.74rem;
+      text-align: center;
+    }
+
+    .version-banner {
+      margin: 0 10px;
+      padding: 8px 9px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      border-radius: 4px;
+      background: rgba(168, 85, 247, 0.1);
+      font-size: 0.76rem;
+      color: var(--text);
+    }
+    .version-banner button {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 5px 9px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      flex: none;
+    }
+    .status-banner {
+      margin: 0 10px;
+      padding: 6px 9px;
+      border-radius: 4px;
+      background: rgba(91, 255, 106, 0.1);
+      border: 1px solid rgba(91, 255, 106, 0.35);
+      color: var(--text);
+      font-size: 0.74rem;
+      text-align: center;
+    }
 
     .message-content.truncatable { cursor: pointer; }
 
@@ -850,6 +1073,7 @@
       align-items: center;
       position: relative;
     }
+    .panel-input[hidden] { display: none; }
     .panel-input input,
     .panel-input textarea {
       flex: 1;
@@ -1000,7 +1224,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark"><img src="logo.png" alt="NanoChat" /></div>
-       
+
       </div>
       <div class="engine-select">
         <label class="engine-select-label" for="engineSelect">Motor</label>
@@ -1008,7 +1232,21 @@
           <option value="openai">OpenAI</option>
           <option value="gemini">Gemini</option>
           <option value="groq">Groq</option>
+          <option value="deepseek">DeepSeek</option>
         </select>
+      </div>
+      <div class="workspace-settings" id="favoritesWrap">
+        <button type="button" class="settings-toggle" id="favoritesToggle" title="Favoritos">&#9733;</button>
+        <div class="settings-menu" id="favoritesMenu"></div>
+      </div>
+      <div class="workspace-settings" id="workspaceSettings">
+        <button type="button" class="settings-toggle" id="settingsToggle" title="Opciones">&#9881;</button>
+        <div class="settings-menu">
+          <button type="button" class="settings-item" id="newChatMenuItem">Iniciar nuevo Chat</button>
+          <button type="button" class="settings-item" id="setKeyMenuItem">Establecer Key</button>
+          <button type="button" class="settings-item" id="importChatMenuItem">Importar chat</button>
+          <button type="button" class="settings-item" id="privacyMenuItem">Chats privados</button>
+        </div>
       </div>
       <div class="topbar-view-toggles">
         <button type="button" class="view-toggle-btn" id="sidebarToggleBtn" title="Barra lateral"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg></button>
@@ -1034,21 +1272,6 @@
       <div class="main-shell" id="mainShell">
         <div class="section-head">
           <h1>Workspace</h1>
-          <div class="section-head-actions">
-            <div class="workspace-settings" id="favoritesWrap">
-              <button type="button" class="settings-toggle" id="favoritesToggle" title="Favoritos">&#9733;</button>
-              <div class="settings-menu" id="favoritesMenu"></div>
-            </div>
-            <div class="workspace-settings" id="workspaceSettings">
-              <button type="button" class="settings-toggle" id="settingsToggle" title="Opciones">&#9881;</button>
-              <div class="settings-menu">
-                <button type="button" class="settings-item" id="newChatMenuItem">Iniciar nuevo Chat</button>
-                <button type="button" class="settings-item" id="setKeyMenuItem">Establecer Key</button>
-                <button type="button" class="settings-item" id="importChatMenuItem">Importar chat</button>
-                <button type="button" class="settings-item" id="privacyMenuItem">Chats privados</button>
-              </div>
-            </div>
-          </div>
         </div>
         <section id="chatGrid" class="chat-grid"></section>
       </div>
@@ -1076,6 +1299,8 @@
       <input id="geminiApiKeyInput" type="password" placeholder="Pega tu Gemini API key" autocomplete="off" spellcheck="false" />
       <label class="modal-field-label" for="groqApiKeyInput">Groq API key</label>
       <input id="groqApiKeyInput" type="password" placeholder="Pega tu Groq API key" autocomplete="off" spellcheck="false" />
+      <label class="modal-field-label" for="deepseekApiKeyInput">DeepSeek API key</label>
+      <input id="deepseekApiKeyInput" type="password" placeholder="Pega tu DeepSeek API key" autocomplete="off" spellcheck="false" />
       <div class="modal-actions">
         <button type="button" id="saveKeysBtn">Guardar Keys</button>
         <button type="button" id="closeKeyModalBtn">Cerrar</button>
@@ -1156,6 +1381,7 @@
     const engineSelect = document.getElementById('engineSelect');
     const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
     const groqApiKeyInput = document.getElementById('groqApiKeyInput');
+    const deepseekApiKeyInput = document.getElementById('deepseekApiKeyInput');
     const AUTH_STORAGE_KEY = 'nanochat_auth_user';
 
     let chatState = [];
@@ -1163,6 +1389,7 @@
     let openAiApiKey = '';
     let geminiApiKey = '';
     let groqApiKey = '';
+    let deepseekApiKey = '';
     let pendingPrivacyChatId = null;
     let userCryptoKey = null;
     let selectedEngine = 'openai';
@@ -1172,6 +1399,7 @@
     const API_KEY_STORAGE = 'nanochat_openai_key';
     const GEMINI_API_KEY_STORAGE = 'nanochat_gemini_key';
     const GROQ_API_KEY_STORAGE = 'nanochat_groq_key';
+    const DEEPSEEK_API_KEY_STORAGE = 'nanochat_deepseek_key';
     const ENGINE_STORAGE = 'nanochat_engine';
     const PRIVACY_PASSWORD_STORAGE = 'nanochat_privacy_password';
     const CRYPTO_SALT = 'nanochat-local-salt-v1';
@@ -1255,6 +1483,7 @@
     }
 
     async function saveChatToStorage(chat) {
+      if (chat.temporalMode) return;
       try {
         if (chat.isPrivate) {
           if (chat._encryptedMessages && !chat.unlocked) {
@@ -1268,6 +1497,7 @@
               expandedIndices: Array.isArray(chat.expandedIndices) ? chat.expandedIndices : [],
               favorite: Boolean(chat.favorite),
               revealedOlderCount: Number(chat.revealedOlderCount) || 0,
+              versions: Array.isArray(chat.versions) ? chat.versions : [],
               isPrivate: true
             }));
             return;
@@ -1283,6 +1513,7 @@
             expandedIndices: Array.isArray(chat.expandedIndices) ? chat.expandedIndices : [],
             favorite: Boolean(chat.favorite),
             revealedOlderCount: Number(chat.revealedOlderCount) || 0,
+            versions: Array.isArray(chat.versions) ? chat.versions : [],
             isPrivate: true
           }));
           return;
@@ -1294,6 +1525,7 @@
           expandedIndices: Array.isArray(chat.expandedIndices) ? chat.expandedIndices : [],
           favorite: Boolean(chat.favorite),
           revealedOlderCount: Number(chat.revealedOlderCount) || 0,
+          versions: Array.isArray(chat.versions) ? chat.versions : [],
           isPrivate: false
         }));
       } catch (error) {}
@@ -1376,6 +1608,21 @@
       } catch (error) {}
     }
 
+    async function loadSavedDeepSeekApiKey() {
+      try {
+        const raw = localStorage.getItem(DEEPSEEK_API_KEY_STORAGE) || '';
+        return await decryptForUser(raw);
+      } catch (error) {
+        return '';
+      }
+    }
+
+    async function saveDeepSeekApiKey(key) {
+      try {
+        localStorage.setItem(DEEPSEEK_API_KEY_STORAGE, await encryptForUser(key));
+      } catch (error) {}
+    }
+
     function hasPrivacyPassword() {
       try {
         return !!localStorage.getItem(PRIVACY_PASSWORD_STORAGE);
@@ -1441,6 +1688,7 @@
       apiKeyInput.value = openAiApiKey || '';
       geminiApiKeyInput.value = geminiApiKey || '';
       groqApiKeyInput.value = groqApiKey || '';
+      deepseekApiKeyInput.value = deepseekApiKey || '';
       connectStatus.textContent = '';
       keyModalOverlay.hidden = false;
       apiKeyInput.focus();
@@ -1481,7 +1729,12 @@
         favorite: false,
         isPrivate: false,
         unlocked: false,
-        revealedOlderCount: 0
+        revealedOlderCount: 0,
+        versions: [],
+        viewingVersionId: null,
+        statusMessage: null,
+        consoleShowVersions: false,
+        temporalMode: false
       };
       chatState.forEach(item => { item.focused = false; });
       chatState.push(chat);
@@ -1540,6 +1793,126 @@
       }, null, 2);
     }
 
+    function generateVersionId() {
+      return 'v' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    }
+
+    function buildPinnedConversationText(chat) {
+      const includedIndices = new Set();
+      chat.pinnedIndices.forEach(idx => {
+        const msg = chat.messages[idx];
+        if (!msg || msg.typing) return;
+        if (msg.role === 'assistant') {
+          const prev = chat.messages[idx - 1];
+          if (prev && prev.role === 'user') includedIndices.add(idx - 1);
+          includedIndices.add(idx);
+        } else {
+          includedIndices.add(idx);
+          const next = chat.messages[idx + 1];
+          if (next && next.role === 'assistant' && !next.typing) includedIndices.add(idx + 1);
+        }
+      });
+      const sortedIndices = Array.from(includedIndices).sort((a, b) => a - b);
+      return sortedIndices.map(idx => {
+        const message = chat.messages[idx];
+        const raw = (message.rawText || message.content || '').trim();
+        const label = message.role === 'user' ? 'Usuario' : 'Asistente';
+        return label + ': ' + raw;
+      }).join('\n\n');
+    }
+
+    async function handleResumenCommand(chat) {
+      if (chat.viewingVersionId) {
+        window.alert('Vuelve a la versión actual para usar este comando.');
+        return;
+      }
+      const hasPinned = chat.pinnedIndices.some(idx => chat.messages[idx] && !chat.messages[idx].typing);
+      if (!hasPinned) {
+        window.alert('No hay mensajes anclados para resumir.');
+        return;
+      }
+      const transcript = buildPinnedConversationText(chat);
+      const engineName = engineLabel(selectedEngine);
+      const activeKey = getEngineKey(selectedEngine);
+      if (!activeKey) {
+        window.alert('Conecta tu API key de ' + engineName + ' para generar el resumen.');
+        return;
+      }
+      chat.statusMessage = 'Generando resumen...';
+      renderChats();
+      try {
+        const engineMessages = [
+          { role: 'user', content: 'Resume de forma clara y concisa la siguiente conversación:\n\n' + transcript }
+        ];
+        let reply;
+        if (selectedEngine === 'gemini') reply = await callGemini(engineMessages, activeKey);
+        else if (selectedEngine === 'groq') reply = await callGroq(engineMessages, activeKey);
+        else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
+        else reply = await callOpenAI(engineMessages, activeKey);
+
+        const versionNumber = (Array.isArray(chat.versions) ? chat.versions.length : 0) + 1;
+        chat.versions = Array.isArray(chat.versions) ? chat.versions : [];
+        chat.versions.push({
+          id: generateVersionId(),
+          label: 'chat_v' + String(versionNumber).padStart(3, '0'),
+          createdAt: Date.now(),
+          messages: chat.messages.filter(message => !message.typing),
+          pinnedIndices: chat.pinnedIndices.slice()
+        });
+        chat.messages = [{
+          role: 'assistant',
+          isSummary: true,
+          content: reply,
+          display: formatMarkdown(reply),
+          rawText: reply
+        }];
+        chat.pinnedIndices = [];
+        chat.expandedIndices = [];
+        chat.statusMessage = null;
+        saveChatToStorage(chat);
+        renderChats();
+      } catch (error) {
+        chat.statusMessage = null;
+        renderChats();
+        window.alert('No se pudo generar el resumen: ' + (error && error.message ? error.message : 'error desconocido'));
+      }
+    }
+
+    function handleLimpiarCommand(chat) {
+      if (chat.viewingVersionId) {
+        const version = (chat.versions || []).find(v => v.id === chat.viewingVersionId);
+        const label = version ? version.label : 'esta versión';
+        if (!window.confirm('¿Eliminar permanentemente ' + label + '? Esta acción es irreversible.')) return;
+        chat.versions = (chat.versions || []).filter(v => v.id !== chat.viewingVersionId);
+        chat.viewingVersionId = null;
+        chat.statusMessage = 'Versión antigua eliminada correctamente.';
+        saveChatToStorage(chat);
+        renderChats();
+        setTimeout(() => {
+          chat.statusMessage = null;
+          renderChats();
+        }, 3000);
+        return;
+      }
+      if (!window.confirm('¿Eliminar permanentemente el chat actual? Esta acción es irreversible.')) return;
+      chat.messages = [];
+      chat.pinnedIndices = [];
+      chat.expandedIndices = [];
+      saveChatToStorage(chat);
+      renderChats();
+    }
+
+    async function runConsoleCommand(chat, command) {
+      if (command === 'resumen') {
+        await handleResumenCommand(chat);
+      } else if (command === 'chatsversion') {
+        chat.consoleShowVersions = true;
+        renderChats();
+      } else if (command === 'limpiar') {
+        handleLimpiarCommand(chat);
+      }
+    }
+
     function openImportModal() {
       importTextarea.value = '';
       importStatus.textContent = '';
@@ -1587,7 +1960,12 @@
         favorite: false,
         isPrivate: false,
         unlocked: false,
-        revealedOlderCount: 0
+        revealedOlderCount: 0,
+        versions: Array.isArray(parsed.versions) ? parsed.versions : [],
+        viewingVersionId: null,
+        statusMessage: null,
+        consoleShowVersions: false,
+        temporalMode: false
       };
       chatState.forEach(item => { item.focused = false; item.flashHighlight = false; });
       chatState.unshift(chat);
@@ -1625,6 +2003,48 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+
+    function clearHighlightsInElement(element) {
+      element.querySelectorAll('mark.search-highlight').forEach(mark => {
+        const parent = mark.parentNode;
+        if (!parent) return;
+        parent.replaceChild(document.createTextNode(mark.textContent), mark);
+        parent.normalize();
+      });
+    }
+
+    function highlightMatchesInElement(element, query) {
+      if (!query) return 0;
+      const lowerQuery = query.toLowerCase();
+      let count = 0;
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+      const textNodes = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        textNodes.push(node);
+      }
+      textNodes.forEach(textNode => {
+        const text = textNode.textContent;
+        const lowerText = text.toLowerCase();
+        let idx = lowerText.indexOf(lowerQuery);
+        if (idx === -1) return;
+        const frag = document.createDocumentFragment();
+        let lastEnd = 0;
+        while (idx !== -1) {
+          frag.appendChild(document.createTextNode(text.slice(lastEnd, idx)));
+          const mark = document.createElement('mark');
+          mark.className = 'search-highlight';
+          mark.textContent = text.slice(idx, idx + query.length);
+          frag.appendChild(mark);
+          count++;
+          lastEnd = idx + query.length;
+          idx = lowerText.indexOf(lowerQuery, lastEnd);
+        }
+        frag.appendChild(document.createTextNode(text.slice(lastEnd)));
+        textNode.parentNode.replaceChild(frag, textNode);
+      });
+      return count;
     }
 
     function startEditChatTitle(id, panel) {
@@ -1681,6 +2101,8 @@
       chatGrid.innerHTML = '';
       chatState.forEach(chat => {
         if (chat.minimized || chat.deleted) return;
+        const justGainedFocus = chat.focused && !chat._wasFocused;
+        chat._wasFocused = chat.focused;
 
         const panel = document.createElement('article');
         panel.className = 'chat-panel';
@@ -1691,8 +2113,15 @@
         if (chat.closing) panel.classList.add('closing');
         if (chat.flashHighlight) panel.classList.add('flash-highlight');
 
-        const lastMsgIndex = chat.messages.length - 1;
-        const assistantIdxList = chat.messages
+        const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
+        const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
+        const isVersionPicker = Boolean(chat.consoleShowVersions);
+        const isReadOnly = Boolean(viewingVersion);
+        const activeMessages = viewingVersion ? viewingVersion.messages : chat.messages;
+        const activePinnedIndices = viewingVersion ? (viewingVersion.pinnedIndices || []) : chat.pinnedIndices;
+
+        const lastMsgIndex = activeMessages.length - 1;
+        const assistantIdxList = activeMessages
           .map((message, i) => ({ message, i }))
           .filter(item => item.message.role === 'assistant' && !item.message.typing)
           .map(item => item.i);
@@ -1709,14 +2138,25 @@
           ? '<button type="button" class="show-more-messages">Mostrar 10 mensajes más...</button>'
           : '';
 
-        const history = chat.messages.length
-          ? showMoreHtml + chat.messages.slice(historyStartIndex).map((message, sliceIdx) => {
+        const history = activeMessages.length
+          ? showMoreHtml + activeMessages.slice(historyStartIndex).map((message, sliceIdx) => {
               const i = historyStartIndex + sliceIdx;
               if (message.typing) {
                 return '<div class="message assistant typing" data-msg-index="' + i + '"><span class="typing-dots"><span></span><span></span><span></span></span></div>';
               }
+              if (message.isSummary) {
+                const plainSummary = (message.rawText || message.content || '').trim();
+                const isExpanded = chat.expandedIndices.includes(i);
+                const isTruncatable = plainSummary.length > 200;
+                const contentHtml = (isTruncatable && !isExpanded)
+                  ? escapeHtml(plainSummary.slice(0, 200)) + '..........'
+                  : (message.display || message.content);
+                const body = '<div class="message-content' + (isTruncatable ? ' truncatable' : '') + '" data-msg-index="' + i + '">' + contentHtml + '</div>';
+                const deleteBtn = isReadOnly ? '' : '<div class="message-actions"><button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button></div>';
+                return '<div class="message summary-message" data-msg-index="' + i + '">' + body + deleteBtn + '</div>';
+              }
               const cls = message.role === 'user' ? 'user' : 'assistant';
-              const isPinned = chat.pinnedIndices.includes(i);
+              const isPinned = activePinnedIndices.includes(i);
               const plain = (message.rawText || message.content || '').trim();
               const isLast = i === lastMsgIndex;
               const isTruncatable = !isLast && plain.length > 100;
@@ -1725,21 +2165,28 @@
                 ? escapeHtml(plain.slice(0, 100)) + '...'
                 : (message.display || message.content);
               const body = '<div class="message-content' + (isTruncatable ? ' truncatable' : '') + '" data-msg-index="' + i + '">' + contentHtml + '</div>';
-              const pinBtn = '<button type="button" class="msg-pin' + (isPinned ? ' active' : '') + '" data-msg-index="' + i + '" title="' + (isPinned ? 'Desanclar' : 'Anclar') + '">&#128204;</button>';
-              const replyBtn = '<button type="button" class="msg-reply" data-msg-index="' + i + '" title="Responder">&#8617;</button>';
-              const deleteBtn = '<button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button>';
-              const actions = cls === 'user'
-                ? '<div class="message-actions"><button type="button" class="msg-edit" data-msg-index="' + i + '" title="Editar">&#9998;</button><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replyBtn + deleteBtn + '</div>'
-                : '<div class="message-actions"><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replyBtn + deleteBtn + '</div>';
+              let actions = '';
+              if (!isReadOnly) {
+                const pinBtn = '<button type="button" class="msg-pin' + (isPinned ? ' active' : '') + '" data-msg-index="' + i + '" title="' + (isPinned ? 'Desanclar' : 'Anclar') + '">&#128204;</button>';
+                const replyBtn = '<button type="button" class="msg-reply" data-msg-index="' + i + '" title="Responder">&#8617;</button>';
+                const deleteBtn = '<button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button>';
+                actions = cls === 'user'
+                  ? '<div class="message-actions"><button type="button" class="msg-edit" data-msg-index="' + i + '" title="Editar">&#9998;</button><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replyBtn + deleteBtn + '</div>'
+                  : '<div class="message-actions"><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replyBtn + deleteBtn + '</div>';
+              }
               return '<div class=\"message ' + cls + (isPinned ? ' pinned' : '') + '\" data-msg-index=\"' + i + '\">' + body + actions + '</div>';
             }).join('')
           : '';
 
-        const attachmentNote = chat.attachment
+        const temporalNoticeHtml = (chat.temporalMode && !isReadOnly && !isVersionPicker)
+          ? '<div class="message temporal-notice">&#128337; Los mensajes de este chat son temporales: se eliminarán automáticamente 1 minuto después de enviarse.</div>'
+          : '';
+
+        const attachmentNote = (chat.attachment && !isReadOnly)
           ? '<div class="message attachment-note"><a class="attachment-link" href="' + chat.attachment.url + '" download="' + escapeHtml(chat.attachment.name) + '" target="_blank" rel="noopener">&#128206; ' + escapeHtml(chat.attachment.name) + ' (clic para descargar)</a></div>'
           : '';
 
-        const sentMessages = chat.messages
+        const sentMessages = activeMessages
           .map((message, i) => ({ message, index: i }))
           .filter(item => item.message.role === 'user' && !item.message.typing);
         const historyItems = sentMessages.length
@@ -1761,10 +2208,10 @@
           return '<button type="button" class="mode-item' + (isActive ? ' active' : '') + '" data-mode="' + opt.key + '">' + opt.label + '</button>';
         }).join('');
 
-        const pinnedItems = chat.pinnedIndices
-          .filter(idx => chat.messages[idx] && !chat.messages[idx].typing)
+        const pinnedItems = activePinnedIndices
+          .filter(idx => activeMessages[idx] && !activeMessages[idx].typing)
           .map(idx => {
-            const pm = chat.messages[idx];
+            const pm = activeMessages[idx];
             const raw = (pm.rawText || pm.content || '').trim();
             const truncated = raw.length > 30 ? raw.slice(0, 30) + '...' : raw;
             return '<button type="button" class="history-item" data-msg-index="' + idx + '">' + escapeHtml(truncated) + '</button>';
@@ -1779,6 +2226,31 @@
           replyBannerHtml = '<div class="reply-banner"><span>&#8617; Respondiendo: ' + escapeHtml(trunc) + '</span><button type="button" class="cancel-reply" title="Cancelar respuesta">&#215;</button></div>';
         }
 
+        const consoleMenuHtml = ''
+          + '<button type="button" class="console-item" data-command="resumen">/resumen<span class="console-item-desc">Resume los mensajes anclados y archiva la conversación actual</span></button>'
+          + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="limpiar">/limpiar<span class="console-item-desc">Elimina permanentemente esta versión del chat</span></button>';
+
+        let versionListHtml = '';
+        if (isVersionPicker) {
+          const versionRows = chatVersions.length
+            ? chatVersions.slice().reverse().map(v => '<button type="button" class="version-list-item' + (chat.viewingVersionId === v.id ? ' active' : '') + '" data-version-id="' + v.id + '">' + escapeHtml(v.label) + '</button>').join('')
+            : '<div class="empty-state">Sin versiones guardadas</div>';
+          versionListHtml = '<div class="version-list">'
+            + '<div class="version-list-header"><span>&#128337; Versiones del chat</span><button type="button" class="version-list-close" title="Cerrar">&#215;</button></div>'
+            + '<button type="button" class="version-list-item' + (chat.viewingVersionId ? '' : ' active') + '" data-version-id="">Versión actual</button>'
+            + versionRows
+            + '</div>';
+        }
+
+        let versionBannerHtml = '';
+        if (viewingVersion) {
+          versionBannerHtml = '<div class="version-banner"><span>&#128337; Viendo ' + escapeHtml(viewingVersion.label) + ' (solo lectura)</span><button type="button" class="back-to-current-version">Volver a versión actual</button></div>';
+        }
+        const statusBannerHtml = chat.statusMessage
+          ? '<div class="status-banner">' + escapeHtml(chat.statusMessage) + '</div>'
+          : '';
+
         panel.innerHTML = `
           <div class="panel-top">
             <div class="panel-title">
@@ -1788,6 +2260,7 @@
             <div class="panel-actions">
               <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">${chat.favorite ? '&#9733;' : '&#9734;'}</button>
               <button type="button" class="key-toggle${chat.isPrivate ? ' active' : ''}" title="${chat.isPrivate ? 'Chat privado' : 'Proteger chat con contraseña'}">&#128273;</button>
+              <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#128337;</button>
               <div class="mode-select">
                 <button type="button" class="mode-toggle" title="Modo de respuesta: ${modeLabel}">&#9881;</button>
                 <div class="mode-menu">${modeMenuItems}</div>
@@ -1800,6 +2273,14 @@
                 <button type="button" class="history-toggle" title="Historial de mensajes enviados">&#9776;</button>
                 <div class="history-menu">${historyItems}</div>
               </div>
+              <div class="panel-search">
+                <button type="button" class="search-toggle" title="Buscar">&#128269;</button>
+                <div class="search-bar">
+                  <input type="text" class="search-input" placeholder="Buscar en el chat..." />
+                  <button type="button" class="search-prev" title="Anterior">&#8593;</button>
+                  <button type="button" class="search-next" title="Siguiente">&#8595;</button>
+                </div>
+              </div>
               <div class="panel-share">
                 <button type="button" class="share-toggle" title="Compartir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button>
                 <div class="share-menu">
@@ -1807,14 +2288,21 @@
                   <button type="button" class="share-item" data-share="all">Compartir todo el chat</button>
                 </div>
               </div>
+              <div class="panel-console">
+                <button type="button" class="console-toggle" title="Consola de comandos"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button>
+                <div class="console-menu">${consoleMenuHtml}</div>
+              </div>
               <button type="button" class="min-btn" title="Minimizar">&#8722;</button>
               <button type="button" class="max-btn" title="Maximizar">&#9633;</button>
               <button type="button" class="close-btn" title="Cerrar">&#215;</button>
             </div>
           </div>
-          <div class="panel-body">${history}${attachmentNote}</div>
-          ${replyBannerHtml}
-          <div class="panel-input">
+          <div class="panel-body">${isVersionPicker ? versionListHtml : (temporalNoticeHtml + history + attachmentNote)}</div>
+          <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
+          ${statusBannerHtml}
+          ${versionBannerHtml}
+          ${(chat.viewingVersionId || isVersionPicker) ? '' : replyBannerHtml}
+          <div class="panel-input"${(chat.viewingVersionId || isVersionPicker) ? ' hidden' : ''}>
             <div class="panel-attach">
               <button type="button" class="attach-toggle" title="Adjuntar">+</button>
               <div class="panel-attach-menu">
@@ -1836,12 +2324,12 @@
 
         panel.addEventListener('click', (event) => {
           if (chat.focused) return;
-          const clickedInput = event.target.closest('.chat-message-input, .privacy-password-input');
+          const clickedInput = event.target.closest('.chat-message-input, .privacy-password-input, .search-input');
           focusChat(chat.id);
           if (clickedInput) {
-            const inputSelector = clickedInput.classList.contains('chat-message-input')
-              ? '.chat-message-input'
-              : '.privacy-password-input';
+            const inputSelector = ['chat-message-input', 'privacy-password-input', 'search-input']
+              .map(cls => '.' + cls)
+              .find(sel => clickedInput.matches(sel));
             requestAnimationFrame(() => {
               const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] ' + inputSelector);
               if (freshInput) freshInput.focus();
@@ -1979,6 +2467,8 @@
             chatInput.focus();
             chatInput.select();
           });
+        } else if (justGainedFocus) {
+          requestAnimationFrame(() => chatInput.focus());
         }
 
         const attachWrap = panel.querySelector('.panel-attach');
@@ -2194,6 +2684,95 @@
           renderChats();
         });
 
+        const searchWrap = panel.querySelector('.panel-search');
+        const searchToggle = panel.querySelector('.search-toggle');
+        const searchInputEl = panel.querySelector('.search-input');
+        const searchPrevBtn = panel.querySelector('.search-prev');
+        const searchNextBtn = panel.querySelector('.search-next');
+        let searchMatches = [];
+        let searchCurrent = -1;
+        let searchHighlightedEl = null;
+
+        function clearActiveSearchHighlight() {
+          if (searchHighlightedEl) {
+            clearHighlightsInElement(searchHighlightedEl);
+            searchHighlightedEl = null;
+          }
+        }
+
+        function recomputeSearchMatches() {
+          const query = searchInputEl.value.trim().toLowerCase();
+          searchMatches = [];
+          searchCurrent = -1;
+          if (!query) return;
+          chat.messages.forEach((message, i) => {
+            if (message.typing) return;
+            const plain = (message.rawText || message.content || '').toLowerCase();
+            if (plain.includes(query)) searchMatches.push(i);
+          });
+        }
+
+        function goToSearchMatch(direction) {
+          const query = searchInputEl.value.trim();
+          if (!query || !searchMatches.length) return;
+
+          let nextIndex;
+          if (searchCurrent === -1) {
+            nextIndex = searchMatches.length - 1;
+          } else if (direction === -1) {
+            if (searchCurrent === 0) return;
+            nextIndex = searchCurrent - 1;
+          } else {
+            if (searchCurrent === searchMatches.length - 1) return;
+            nextIndex = searchCurrent + 1;
+          }
+
+          clearActiveSearchHighlight();
+          searchCurrent = nextIndex;
+          const msgIdx = searchMatches[searchCurrent];
+          const messageEl = panel.querySelector('.panel-body [data-msg-index="' + msgIdx + '"]');
+          if (messageEl) {
+            messageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const contentEl = messageEl.querySelector('.message-content') || messageEl;
+            highlightMatchesInElement(contentEl, query);
+            searchHighlightedEl = contentEl;
+            messageEl.classList.remove('search-flash');
+            void messageEl.offsetWidth;
+            messageEl.classList.add('search-flash');
+            setTimeout(() => messageEl.classList.remove('search-flash'), 850);
+          }
+        }
+
+        searchToggle.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const open = searchWrap.classList.toggle('open');
+          if (open) searchInputEl.focus();
+          else clearActiveSearchHighlight();
+        });
+        searchInputEl.addEventListener('pointerdown', (event) => event.stopPropagation());
+        searchInputEl.addEventListener('input', () => {
+          clearActiveSearchHighlight();
+          recomputeSearchMatches();
+        });
+        searchInputEl.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (searchCurrent === -1) recomputeSearchMatches();
+            goToSearchMatch(1);
+          }
+        });
+        searchPrevBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (searchCurrent === -1) recomputeSearchMatches();
+          goToSearchMatch(-1);
+        });
+        searchNextBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (searchCurrent === -1) recomputeSearchMatches();
+          goToSearchMatch(1);
+        });
+
         const shareWrap = panel.querySelector('.panel-share');
         const shareToggle = panel.querySelector('.share-toggle');
         const shareMenu = panel.querySelector('.share-menu');
@@ -2222,6 +2801,59 @@
           });
         }
 
+        const consoleWrap = panel.querySelector('.panel-console');
+        const consoleToggle = panel.querySelector('.console-toggle');
+        const consoleMenu = panel.querySelector('.console-menu');
+        consoleToggle.addEventListener('click', (event) => {
+          event.stopPropagation();
+          consoleWrap.classList.toggle('open');
+        });
+        consoleMenu.addEventListener('click', async (event) => {
+          const cmdItem = event.target.closest('.console-item');
+          if (!cmdItem) return;
+          event.stopPropagation();
+          const command = cmdItem.getAttribute('data-command');
+          consoleWrap.classList.remove('open');
+          await runConsoleCommand(chat, command);
+        });
+
+        const temporalToggle = panel.querySelector('.temporal-toggle');
+        temporalToggle.addEventListener('click', (event) => {
+          event.stopPropagation();
+          chat.temporalMode = !chat.temporalMode;
+          renderChats();
+        });
+
+        const versionListEl = panel.querySelector('.version-list');
+        if (versionListEl) {
+          versionListEl.addEventListener('click', (event) => {
+            const closeBtn = event.target.closest('.version-list-close');
+            const versionItem = event.target.closest('.version-list-item');
+            if (closeBtn) {
+              event.stopPropagation();
+              chat.consoleShowVersions = false;
+              renderChats();
+              return;
+            }
+            if (versionItem) {
+              event.stopPropagation();
+              const versionId = versionItem.getAttribute('data-version-id') || null;
+              chat.viewingVersionId = versionId || null;
+              chat.consoleShowVersions = false;
+              renderChats();
+            }
+          });
+        }
+
+        const backToCurrentVersionBtn = panel.querySelector('.back-to-current-version');
+        if (backToCurrentVersionBtn) {
+          backToCurrentVersionBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            chat.viewingVersionId = null;
+            renderChats();
+          });
+        }
+
         chatGrid.appendChild(panel);
         const panelBody = panel.querySelector('.panel-body');
         panelBody.style.overflowY = chat.focused ? 'auto' : 'hidden';
@@ -2233,20 +2865,35 @@
         panel.addEventListener('mouseleave', () => {
           panelBody.style.overflowY = 'hidden';
         });
+
+        const scrollToBottomBtn = panel.querySelector('.scroll-to-bottom-btn');
+        const updateScrollToBottomVisibility = () => {
+          const distanceFromBottom = panelBody.scrollHeight - panelBody.scrollTop - panelBody.clientHeight;
+          scrollToBottomBtn.hidden = distanceFromBottom < 40;
+        };
+        panelBody.addEventListener('scroll', updateScrollToBottomVisibility);
+        scrollToBottomBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          panelBody.scrollTo({ top: panelBody.scrollHeight, behavior: 'smooth' });
+        });
+
         requestAnimationFrame(() => {
           if (Object.prototype.hasOwnProperty.call(scrollOverrides, chat.id)) {
             panelBody.scrollTop = scrollOverrides[chat.id];
             delete scrollOverrides[chat.id];
+            updateScrollToBottomVisibility();
             return;
           }
           if (chat.editingIndex != null) {
             const target = panelBody.querySelector('[data-msg-index="' + chat.editingIndex + '"]');
             if (target) {
               target.scrollIntoView({ block: 'center' });
+              updateScrollToBottomVisibility();
               return;
             }
           }
           panelBody.scrollTop = panelBody.scrollHeight;
+          updateScrollToBottomVisibility();
         });
       });
 
@@ -2335,7 +2982,12 @@
         favorite: false,
         isPrivate: false,
         unlocked: false,
-        revealedOlderCount: 0
+        revealedOlderCount: 0,
+        versions: [],
+        viewingVersionId: null,
+        statusMessage: null,
+        consoleShowVersions: false,
+        temporalMode: false
       }));
       chatState.forEach(saveChatToStorage);
       renderChats();
@@ -2368,7 +3020,12 @@
         favorite: Boolean(item.favorite),
         isPrivate: Boolean(item.isPrivate),
         unlocked: false,
-        revealedOlderCount: Number(item.revealedOlderCount) || 0
+        revealedOlderCount: Number(item.revealedOlderCount) || 0,
+        versions: Array.isArray(item.versions) ? item.versions : [],
+        viewingVersionId: null,
+        statusMessage: null,
+        consoleShowVersions: false,
+        temporalMode: false
       }));
       renderChats();
     }
@@ -2436,12 +3093,14 @@
     function engineLabel(engine) {
       if (engine === 'gemini') return 'Gemini';
       if (engine === 'groq') return 'Groq';
+      if (engine === 'deepseek') return 'DeepSeek';
       return 'OpenAI';
     }
 
     function getEngineKey(engine) {
       if (engine === 'gemini') return geminiApiKey;
       if (engine === 'groq') return groqApiKey;
+      if (engine === 'deepseek') return deepseekApiKey;
       return openAiApiKey;
     }
 
@@ -2449,7 +3108,8 @@
       const nextOpenAi = apiKeyInput.value.trim();
       const nextGemini = geminiApiKeyInput.value.trim();
       const nextGroq = groqApiKeyInput.value.trim();
-      if (!nextOpenAi && !nextGemini && !nextGroq) {
+      const nextDeepSeek = deepseekApiKeyInput.value.trim();
+      if (!nextOpenAi && !nextGemini && !nextGroq && !nextDeepSeek) {
         connectStatus.textContent = 'Ingresa al menos una API key.';
         return;
       }
@@ -2464,6 +3124,10 @@
       if (nextGroq) {
         groqApiKey = nextGroq;
         await saveGroqApiKey(nextGroq);
+      }
+      if (nextDeepSeek) {
+        deepseekApiKey = nextDeepSeek;
+        await saveDeepSeekApiKey(nextDeepSeek);
       }
       closeKeyModal();
     }
@@ -2526,6 +3190,25 @@
       return data.choices?.[0]?.message?.content || 'Respuesta recibida.';
     }
 
+    async function callDeepSeek(messages, apiKey) {
+      const response = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'No se pudo conectar con DeepSeek.');
+      }
+      return data.choices?.[0]?.message?.content || 'Respuesta recibida.';
+    }
+
     async function sendMessage(chatId, panel) {
       const chat = chatState.find(item => item.id === chatId);
       if (!chat) return;
@@ -2557,7 +3240,9 @@
         displayContent += '<div class="reply-quote">&#8617; ' + escapeHtml(trunc) + '<button type="button" class="reply-jump-link" data-msg-index="' + originIdx + '">Ir a mensaje origen</button></div>';
       }
       chat.replyingToIndex = null;
-      chat.messages.push({ role: 'user', content: userContent, display: displayContent, rawText: text });
+      const userMessage = { role: 'user', content: userContent, display: displayContent, rawText: text };
+      if (chat.temporalMode) userMessage.expiresAt = Date.now() + 60000;
+      chat.messages.push(userMessage);
       chat.attachment = null;
       chat.focused = true;
       chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
@@ -2584,14 +3269,20 @@
           .filter(message => !message.typing)
           .map(message => ({ role: message.role, content: message.content }));
 
-        const reply = selectedEngine === 'gemini'
-          ? await callGemini(engineMessages, activeKey)
-          : selectedEngine === 'groq'
-            ? await callGroq(engineMessages, activeKey)
-            : await callOpenAI(engineMessages, activeKey);
+        let reply;
+        if (selectedEngine === 'gemini') {
+          reply = await callGemini(engineMessages, activeKey);
+        } else if (selectedEngine === 'groq') {
+          reply = await callGroq(engineMessages, activeKey);
+        } else if (selectedEngine === 'deepseek') {
+          reply = await callDeepSeek(engineMessages, activeKey);
+        } else {
+          reply = await callOpenAI(engineMessages, activeKey);
+        }
 
         const typingIndex = chat.messages.indexOf(typingMessage);
         const replyMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply) };
+        if (chat.temporalMode) replyMessage.expiresAt = Date.now() + 60000;
         if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
         chat.blinked = true;
         saveChatToStorage(chat);
@@ -2604,6 +3295,7 @@
       } catch (error) {
         const errorText = error && error.message ? error.message : ('No se pudo conectar con ' + engineName + '.');
         const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText) };
+        if (chat.temporalMode) errorMessage.expiresAt = Date.now() + 60000;
         const typingIndex = chat.messages.indexOf(typingMessage);
         if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
         saveChatToStorage(chat);
@@ -2686,7 +3378,7 @@
         minimizedLauncher.classList.remove('open');
         minimizedLauncher.setAttribute('aria-expanded', 'false');
       }
-      document.querySelectorAll('.panel-attach.open, .panel-history.open, .mode-select.open, .panel-pins.open, .panel-share.open').forEach(el => {
+      document.querySelectorAll('.panel-attach.open, .panel-history.open, .mode-select.open, .panel-pins.open, .panel-share.open, .panel-search.open, .panel-console.open').forEach(el => {
         if (!el.contains(event.target)) el.classList.remove('open');
       });
       if (!workspaceSettings.contains(event.target)) {
@@ -2821,9 +3513,10 @@
       openAiApiKey = await loadSavedApiKey();
       geminiApiKey = await loadSavedGeminiApiKey();
       groqApiKey = await loadSavedGroqApiKey();
+      deepseekApiKey = await loadSavedDeepSeekApiKey();
       try {
         const savedEngine = localStorage.getItem(ENGINE_STORAGE);
-        if (savedEngine === 'openai' || savedEngine === 'gemini' || savedEngine === 'groq') {
+        if (savedEngine === 'openai' || savedEngine === 'gemini' || savedEngine === 'groq' || savedEngine === 'deepseek') {
           selectedEngine = savedEngine;
           engineSelect.value = selectedEngine;
         }
@@ -2833,11 +3526,36 @@
 
     engineSelect.addEventListener('change', () => {
       const value = engineSelect.value;
-      selectedEngine = (value === 'gemini' || value === 'groq') ? value : 'openai';
+      selectedEngine = (value === 'gemini' || value === 'groq' || value === 'deepseek') ? value : 'openai';
       try {
         localStorage.setItem(ENGINE_STORAGE, selectedEngine);
       } catch (error) {}
     });
+
+    function pruneExpiredTemporalMessages() {
+      const now = Date.now();
+      let changed = false;
+      chatState.forEach(chat => {
+        if (!chat.messages.some(message => message.expiresAt && message.expiresAt <= now)) return;
+        const keptIndices = [];
+        chat.messages = chat.messages.filter((message, idx) => {
+          const keep = !(message.expiresAt && message.expiresAt <= now);
+          if (keep) keptIndices.push(idx);
+          return keep;
+        });
+        const remap = idx => {
+          const pos = keptIndices.indexOf(idx);
+          return pos === -1 ? null : pos;
+        };
+        chat.pinnedIndices = chat.pinnedIndices.map(remap).filter(idx => idx !== null);
+        chat.expandedIndices = chat.expandedIndices.map(remap).filter(idx => idx !== null);
+        if (chat.editingIndex != null) chat.editingIndex = remap(chat.editingIndex);
+        if (chat.replyingToIndex != null) chat.replyingToIndex = remap(chat.replyingToIndex);
+        changed = true;
+      });
+      if (changed) renderChats();
+    }
+    setInterval(pruneExpiredTemporalMessages, 1000);
 
     bootstrap();
   </script>
