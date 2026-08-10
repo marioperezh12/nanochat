@@ -891,6 +891,33 @@
     }
     .version-list-item:hover { background: rgba(255,255,255,0.08); }
     .version-list-item.active { border-color: #41d6c7; color: #41d6c7; }
+    .version-list-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      border-radius: 4px;
+      padding: 9px 10px;
+      font-size: 0.8rem;
+    }
+    .version-list-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .version-delete-btn {
+      border: 1px solid rgba(255, 107, 107, 0.4);
+      background: rgba(255, 107, 107, 0.08);
+      color: #ff6b6b;
+      border-radius: 4px;
+      width: 26px;
+      height: 26px;
+      cursor: pointer;
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .version-delete-btn:hover { background: rgba(255, 107, 107, 0.2); }
 
     .message.summary-message {
       max-width: 100%;
@@ -1734,6 +1761,7 @@
         viewingVersionId: null,
         statusMessage: null,
         consoleShowVersions: false,
+        consoleShowDelete: false,
         temporalMode: false
       };
       chatState.forEach(item => { item.focused = false; });
@@ -1797,24 +1825,24 @@
       return 'v' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     }
 
-    function buildPinnedConversationText(chat) {
+    function buildPinnedConversationText(messages, pinnedIndices) {
       const includedIndices = new Set();
-      chat.pinnedIndices.forEach(idx => {
-        const msg = chat.messages[idx];
+      pinnedIndices.forEach(idx => {
+        const msg = messages[idx];
         if (!msg || msg.typing) return;
         if (msg.role === 'assistant') {
-          const prev = chat.messages[idx - 1];
+          const prev = messages[idx - 1];
           if (prev && prev.role === 'user') includedIndices.add(idx - 1);
           includedIndices.add(idx);
         } else {
           includedIndices.add(idx);
-          const next = chat.messages[idx + 1];
+          const next = messages[idx + 1];
           if (next && next.role === 'assistant' && !next.typing) includedIndices.add(idx + 1);
         }
       });
       const sortedIndices = Array.from(includedIndices).sort((a, b) => a - b);
       return sortedIndices.map(idx => {
-        const message = chat.messages[idx];
+        const message = messages[idx];
         const raw = (message.rawText || message.content || '').trim();
         const label = message.role === 'user' ? 'Usuario' : 'Asistente';
         return label + ': ' + raw;
@@ -1822,16 +1850,17 @@
     }
 
     async function handleResumenCommand(chat) {
-      if (chat.viewingVersionId) {
-        window.alert('Vuelve a la versión actual para usar este comando.');
-        return;
-      }
-      const hasPinned = chat.pinnedIndices.some(idx => chat.messages[idx] && !chat.messages[idx].typing);
+      const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
+      const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
+      const activeMessages = viewingVersion ? viewingVersion.messages : chat.messages;
+      const activePinnedIndices = viewingVersion ? (viewingVersion.pinnedIndices || []) : chat.pinnedIndices;
+
+      const hasPinned = activePinnedIndices.some(idx => activeMessages[idx] && !activeMessages[idx].typing);
       if (!hasPinned) {
         window.alert('No hay mensajes anclados para resumir.');
         return;
       }
-      const transcript = buildPinnedConversationText(chat);
+      const transcript = buildPinnedConversationText(activeMessages, activePinnedIndices);
       const engineName = engineLabel(selectedEngine);
       const activeKey = getEngineKey(selectedEngine);
       if (!activeKey) {
@@ -1850,8 +1879,8 @@
         else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
         else reply = await callOpenAI(engineMessages, activeKey);
 
-        const versionNumber = (Array.isArray(chat.versions) ? chat.versions.length : 0) + 1;
-        chat.versions = Array.isArray(chat.versions) ? chat.versions : [];
+        const versionNumber = chatVersions.length + 1;
+        chat.versions = chatVersions;
         chat.versions.push({
           id: generateVersionId(),
           label: 'chat_v' + String(versionNumber).padStart(3, '0'),
@@ -1868,6 +1897,7 @@
         }];
         chat.pinnedIndices = [];
         chat.expandedIndices = [];
+        chat.viewingVersionId = null;
         chat.statusMessage = null;
         saveChatToStorage(chat);
         renderChats();
@@ -1878,28 +1908,28 @@
       }
     }
 
-    function handleLimpiarCommand(chat) {
-      if (chat.viewingVersionId) {
-        const version = (chat.versions || []).find(v => v.id === chat.viewingVersionId);
+    function handleDeleteVersionClick(chat, versionId) {
+      const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
+      if (!versionId) {
+        if (!window.confirm('¿Eliminar permanentemente la versión actual? Esta acción es irreversible.')) return;
+        chat.messages = [];
+        chat.pinnedIndices = [];
+        chat.expandedIndices = [];
+        chat.statusMessage = 'Versión actual eliminada correctamente.';
+      } else {
+        const version = chatVersions.find(v => v.id === versionId);
         const label = version ? version.label : 'esta versión';
         if (!window.confirm('¿Eliminar permanentemente ' + label + '? Esta acción es irreversible.')) return;
-        chat.versions = (chat.versions || []).filter(v => v.id !== chat.viewingVersionId);
-        chat.viewingVersionId = null;
-        chat.statusMessage = 'Versión antigua eliminada correctamente.';
-        saveChatToStorage(chat);
-        renderChats();
-        setTimeout(() => {
-          chat.statusMessage = null;
-          renderChats();
-        }, 3000);
-        return;
+        chat.versions = chatVersions.filter(v => v.id !== versionId);
+        if (chat.viewingVersionId === versionId) chat.viewingVersionId = null;
+        chat.statusMessage = label + ' eliminada correctamente.';
       }
-      if (!window.confirm('¿Eliminar permanentemente el chat actual? Esta acción es irreversible.')) return;
-      chat.messages = [];
-      chat.pinnedIndices = [];
-      chat.expandedIndices = [];
       saveChatToStorage(chat);
       renderChats();
+      setTimeout(() => {
+        chat.statusMessage = null;
+        renderChats();
+      }, 3000);
     }
 
     async function runConsoleCommand(chat, command) {
@@ -1907,9 +1937,12 @@
         await handleResumenCommand(chat);
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
+        chat.consoleShowDelete = false;
         renderChats();
-      } else if (command === 'limpiar') {
-        handleLimpiarCommand(chat);
+      } else if (command === 'eliminar') {
+        chat.consoleShowDelete = true;
+        chat.consoleShowVersions = false;
+        renderChats();
       }
     }
 
@@ -1965,6 +1998,7 @@
         viewingVersionId: null,
         statusMessage: null,
         consoleShowVersions: false,
+        consoleShowDelete: false,
         temporalMode: false
       };
       chatState.forEach(item => { item.focused = false; item.flashHighlight = false; });
@@ -2116,6 +2150,8 @@
         const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
         const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
         const isVersionPicker = Boolean(chat.consoleShowVersions);
+        const isDeletePicker = Boolean(chat.consoleShowDelete);
+        const isPickerMode = isVersionPicker || isDeletePicker;
         const isReadOnly = Boolean(viewingVersion);
         const activeMessages = viewingVersion ? viewingVersion.messages : chat.messages;
         const activePinnedIndices = viewingVersion ? (viewingVersion.pinnedIndices || []) : chat.pinnedIndices;
@@ -2165,9 +2201,11 @@
                 ? escapeHtml(plain.slice(0, 100)) + '...'
                 : (message.display || message.content);
               const body = '<div class="message-content' + (isTruncatable ? ' truncatable' : '') + '" data-msg-index="' + i + '">' + contentHtml + '</div>';
-              let actions = '';
-              if (!isReadOnly) {
-                const pinBtn = '<button type="button" class="msg-pin' + (isPinned ? ' active' : '') + '" data-msg-index="' + i + '" title="' + (isPinned ? 'Desanclar' : 'Anclar') + '">&#128204;</button>';
+              const pinBtn = '<button type="button" class="msg-pin' + (isPinned ? ' active' : '') + '" data-msg-index="' + i + '" title="' + (isPinned ? 'Desanclar' : 'Anclar') + '">&#128204;</button>';
+              let actions;
+              if (isReadOnly) {
+                actions = '<div class="message-actions">' + pinBtn + '</div>';
+              } else {
                 const replyBtn = '<button type="button" class="msg-reply" data-msg-index="' + i + '" title="Responder">&#8617;</button>';
                 const deleteBtn = '<button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button>';
                 actions = cls === 'user'
@@ -2178,7 +2216,7 @@
             }).join('')
           : '';
 
-        const temporalNoticeHtml = (chat.temporalMode && !isReadOnly && !isVersionPicker)
+        const temporalNoticeHtml = (chat.temporalMode && !isReadOnly && !isPickerMode)
           ? '<div class="message temporal-notice">&#128337; Los mensajes de este chat son temporales: se eliminarán automáticamente 1 minuto después de enviarse.</div>'
           : '';
 
@@ -2227,9 +2265,9 @@
         }
 
         const consoleMenuHtml = ''
-          + '<button type="button" class="console-item" data-command="resumen">/resumen<span class="console-item-desc">Resume los mensajes anclados y archiva la conversación actual</span></button>'
+          + '<button type="button" class="console-item" data-command="resumen">/resumen<span class="console-item-desc">Resume los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
-          + '<button type="button" class="console-item" data-command="limpiar">/limpiar<span class="console-item-desc">Elimina permanentemente esta versión del chat</span></button>';
+          + '<button type="button" class="console-item" data-command="eliminar">/eliminar<span class="console-item-desc">Lista las versiones para eliminarlas permanentemente</span></button>';
 
         let versionListHtml = '';
         if (isVersionPicker) {
@@ -2243,9 +2281,21 @@
             + '</div>';
         }
 
+        let deleteListHtml = '';
+        if (isDeletePicker) {
+          const versionRows = chatVersions.length
+            ? chatVersions.slice().reverse().map(v => '<div class="version-list-row"><span class="version-list-label">' + escapeHtml(v.label) + '</span><button type="button" class="version-delete-btn" data-version-id="' + v.id + '" title="Eliminar permanentemente">&#128465;</button></div>').join('')
+            : '<div class="empty-state">Sin versiones guardadas</div>';
+          deleteListHtml = '<div class="version-list">'
+            + '<div class="version-list-header"><span>&#128465; Eliminar versiones</span><button type="button" class="version-list-close" title="Cerrar">&#215;</button></div>'
+            + '<div class="version-list-row"><span class="version-list-label">Versión actual</span><button type="button" class="version-delete-btn" data-version-id="" title="Eliminar permanentemente">&#128465;</button></div>'
+            + versionRows
+            + '</div>';
+        }
+
         let versionBannerHtml = '';
-        if (viewingVersion) {
-          versionBannerHtml = '<div class="version-banner"><span>&#128337; Viendo ' + escapeHtml(viewingVersion.label) + ' (solo lectura)</span><button type="button" class="back-to-current-version">Volver a versión actual</button></div>';
+        if (viewingVersion && !isPickerMode) {
+          versionBannerHtml = '<div class="version-banner"><span>&#128337; Viendo ' + escapeHtml(viewingVersion.label) + ' (solo lectura, puedes anclar mensajes para /resumen)</span><button type="button" class="back-to-current-version">Volver a versión actual</button></div>';
         }
         const statusBannerHtml = chat.statusMessage
           ? '<div class="status-banner">' + escapeHtml(chat.statusMessage) + '</div>'
@@ -2297,12 +2347,12 @@
               <button type="button" class="close-btn" title="Cerrar">&#215;</button>
             </div>
           </div>
-          <div class="panel-body">${isVersionPicker ? versionListHtml : (temporalNoticeHtml + history + attachmentNote)}</div>
+          <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (temporalNoticeHtml + history + attachmentNote))}</div>
           <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
           ${statusBannerHtml}
           ${versionBannerHtml}
-          ${(chat.viewingVersionId || isVersionPicker) ? '' : replyBannerHtml}
-          <div class="panel-input"${(chat.viewingVersionId || isVersionPicker) ? ' hidden' : ''}>
+          ${(chat.viewingVersionId || isPickerMode) ? '' : replyBannerHtml}
+          <div class="panel-input"${(chat.viewingVersionId || isPickerMode) ? ' hidden' : ''}>
             <div class="panel-attach">
               <button type="button" class="attach-toggle" title="Adjuntar">+</button>
               <div class="panel-attach-menu">
@@ -2624,8 +2674,13 @@
           if (pinBtn) {
             event.stopPropagation();
             const idx = Number(pinBtn.getAttribute('data-msg-index'));
-            const pos = chat.pinnedIndices.indexOf(idx);
-            if (pos === -1) chat.pinnedIndices.push(idx); else chat.pinnedIndices.splice(pos, 1);
+            let targetPinned = chat.pinnedIndices;
+            if (viewingVersion) {
+              if (!Array.isArray(viewingVersion.pinnedIndices)) viewingVersion.pinnedIndices = [];
+              targetPinned = viewingVersion.pinnedIndices;
+            }
+            const pos = targetPinned.indexOf(idx);
+            if (pos === -1) targetPinned.push(idx); else targetPinned.splice(pos, 1);
             saveChatToStorage(chat);
             scrollOverrides[chat.id] = panelBodyEl.scrollTop;
             renderChats();
@@ -2829,10 +2884,18 @@
           versionListEl.addEventListener('click', (event) => {
             const closeBtn = event.target.closest('.version-list-close');
             const versionItem = event.target.closest('.version-list-item');
+            const deleteBtn = event.target.closest('.version-delete-btn');
             if (closeBtn) {
               event.stopPropagation();
               chat.consoleShowVersions = false;
+              chat.consoleShowDelete = false;
               renderChats();
+              return;
+            }
+            if (deleteBtn) {
+              event.stopPropagation();
+              const versionId = deleteBtn.getAttribute('data-version-id') || null;
+              handleDeleteVersionClick(chat, versionId);
               return;
             }
             if (versionItem) {
@@ -2987,6 +3050,7 @@
         viewingVersionId: null,
         statusMessage: null,
         consoleShowVersions: false,
+        consoleShowDelete: false,
         temporalMode: false
       }));
       chatState.forEach(saveChatToStorage);
@@ -3025,6 +3089,7 @@
         viewingVersionId: null,
         statusMessage: null,
         consoleShowVersions: false,
+        consoleShowDelete: false,
         temporalMode: false
       }));
       renderChats();
