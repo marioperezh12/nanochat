@@ -1134,7 +1134,23 @@
       font-style: italic;
       font-size: 0.76rem;
       text-align: center;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
+    .attachment-remove-btn {
+      border: none;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+      padding: 0 3px;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+    .message.attachment-note:hover .attachment-remove-btn { opacity: 1; }
+    .attachment-remove-btn:hover { color: #ff6b6b; }
     .show-more-messages {
       align-self: center;
       margin: 4px 0;
@@ -1428,6 +1444,7 @@
     const GROQ_API_KEY_STORAGE = 'nanochat_groq_key';
     const DEEPSEEK_API_KEY_STORAGE = 'nanochat_deepseek_key';
     const ENGINE_STORAGE = 'nanochat_engine';
+    const CHAT_ORDER_STORAGE = 'nanochat_order';
     const PRIVACY_PASSWORD_STORAGE = 'nanochat_privacy_password';
     const CRYPTO_SALT = 'nanochat-local-salt-v1';
 
@@ -1525,6 +1542,7 @@
               favorite: Boolean(chat.favorite),
               revealedOlderCount: Number(chat.revealedOlderCount) || 0,
               versions: Array.isArray(chat.versions) ? chat.versions : [],
+              currentSourceLabel: chat.currentSourceLabel || null,
               isPrivate: true
             }));
             return;
@@ -1541,6 +1559,7 @@
             favorite: Boolean(chat.favorite),
             revealedOlderCount: Number(chat.revealedOlderCount) || 0,
             versions: Array.isArray(chat.versions) ? chat.versions : [],
+            currentSourceLabel: chat.currentSourceLabel || null,
             isPrivate: true
           }));
           return;
@@ -1553,6 +1572,7 @@
           favorite: Boolean(chat.favorite),
           revealedOlderCount: Number(chat.revealedOlderCount) || 0,
           versions: Array.isArray(chat.versions) ? chat.versions : [],
+          currentSourceLabel: chat.currentSourceLabel || null,
           isPrivate: false
         }));
       } catch (error) {}
@@ -1577,6 +1597,22 @@
         }
       } catch (error) {}
       return chats;
+    }
+
+    function saveChatOrder() {
+      try {
+        localStorage.setItem(CHAT_ORDER_STORAGE, JSON.stringify(chatState.map(item => item.name)));
+      } catch (error) {}
+    }
+
+    function loadChatOrder() {
+      try {
+        const raw = localStorage.getItem(CHAT_ORDER_STORAGE);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
     }
 
     function clearAllChatsFromStorage() {
@@ -1759,6 +1795,7 @@
         revealedOlderCount: 0,
         versions: [],
         viewingVersionId: null,
+        currentSourceLabel: null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -1767,6 +1804,7 @@
       chatState.forEach(item => { item.focused = false; });
       chatState.push(chat);
       saveChatToStorage(chat);
+      saveChatOrder();
       renderChats();
     }
 
@@ -1811,6 +1849,10 @@
       return 'v' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     }
 
+    function formatVersionLineage(label, sourceLabel) {
+      return (sourceLabel ? escapeHtml(sourceLabel) + ' &#8594; ' : '') + escapeHtml(label);
+    }
+
     function getPinnedContextIndices(messages, pinnedIndices) {
       const includedIndices = new Set();
       pinnedIndices.forEach(idx => {
@@ -1839,18 +1881,39 @@
       }).join('\n\n');
     }
 
-    async function handleResumenCommand(chat) {
+    function buildFullConversationText(messages) {
+      return messages
+        .filter(message => !message.typing)
+        .map(message => {
+          const raw = (message.rawText || message.content || '').trim();
+          const label = message.role === 'user' ? 'Usuario' : 'Asistente';
+          return label + ': ' + raw;
+        })
+        .join('\n\n');
+    }
+
+    async function handleResumenCommand(chat, scope) {
       const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
       const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
       const activeMessages = viewingVersion ? viewingVersion.messages : chat.messages;
       const activePinnedIndices = viewingVersion ? (viewingVersion.pinnedIndices || []) : chat.pinnedIndices;
 
-      const hasPinned = activePinnedIndices.some(idx => activeMessages[idx] && !activeMessages[idx].typing);
-      if (!hasPinned) {
-        window.alert('No hay mensajes anclados para resumir.');
-        return;
+      let transcript;
+      if (scope === 'general') {
+        const hasMessages = activeMessages.some(message => !message.typing);
+        if (!hasMessages) {
+          window.alert('No hay mensajes en la conversación para resumir.');
+          return;
+        }
+        transcript = buildFullConversationText(activeMessages);
+      } else {
+        const hasPinned = activePinnedIndices.some(idx => activeMessages[idx] && !activeMessages[idx].typing);
+        if (!hasPinned) {
+          window.alert('No hay mensajes anclados para resumir.');
+          return;
+        }
+        transcript = buildPinnedConversationText(activeMessages, activePinnedIndices);
       }
-      const transcript = buildPinnedConversationText(activeMessages, activePinnedIndices);
       const engineName = engineLabel(selectedEngine);
       const activeKey = getEngineKey(selectedEngine);
       if (!activeKey) {
@@ -1881,13 +1944,15 @@
         else reply = await callOpenAI(engineMessages, activeKey);
 
         const versionNumber = chatVersions.length + 1;
+        const newVersionLabel = 'chat_v' + String(versionNumber).padStart(3, '0');
         chat.versions = chatVersions;
         chat.versions.push({
           id: generateVersionId(),
-          label: 'chat_v' + String(versionNumber).padStart(3, '0'),
+          label: newVersionLabel,
           createdAt: Date.now(),
           messages: chat.messages.filter(message => !message.typing),
-          pinnedIndices: chat.pinnedIndices.slice()
+          pinnedIndices: chat.pinnedIndices.slice(),
+          sourceLabel: chat.currentSourceLabel || null
         });
         chat.messages = [{
           role: 'assistant',
@@ -1899,6 +1964,7 @@
         chat.pinnedIndices = [];
         chat.expandedIndices = [];
         chat.viewingVersionId = null;
+        chat.currentSourceLabel = viewingVersion ? viewingVersion.label : newVersionLabel;
         chat.statusMessage = null;
         saveChatToStorage(chat);
         renderChats();
@@ -1916,6 +1982,7 @@
         chat.messages = [];
         chat.pinnedIndices = [];
         chat.expandedIndices = [];
+        chat.currentSourceLabel = null;
         chat.statusMessage = 'Versión actual eliminada correctamente.';
       } else {
         const version = chatVersions.find(v => v.id === versionId);
@@ -1934,8 +2001,10 @@
     }
 
     async function runConsoleCommand(chat, command) {
-      if (command === 'resumen') {
-        await handleResumenCommand(chat);
+      if (command === 'resumen-anclados') {
+        await handleResumenCommand(chat, 'anclados');
+      } else if (command === 'resumen-general') {
+        await handleResumenCommand(chat, 'general');
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
         chat.consoleShowDelete = false;
@@ -1997,6 +2066,7 @@
         revealedOlderCount: 0,
         versions: Array.isArray(parsed.versions) ? parsed.versions : [],
         viewingVersionId: null,
+        currentSourceLabel: typeof parsed.currentSourceLabel === 'string' ? parsed.currentSourceLabel : null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -2005,6 +2075,7 @@
       chatState.forEach(item => { item.focused = false; item.flashHighlight = false; });
       chatState.unshift(chat);
       saveChatToStorage(chat);
+      saveChatOrder();
       closeImportModal();
       renderChats();
     }
@@ -2222,7 +2293,7 @@
           : '';
 
         const attachmentNote = (chat.attachment && !isReadOnly)
-          ? '<div class="message attachment-note"><a class="attachment-link" href="' + chat.attachment.url + '" download="' + escapeHtml(chat.attachment.name) + '" target="_blank" rel="noopener">&#128206; ' + escapeHtml(chat.attachment.name) + ' (clic para descargar)</a></div>'
+          ? '<div class="message attachment-note"><a class="attachment-link" href="' + chat.attachment.url + '" download="' + escapeHtml(chat.attachment.name) + '" target="_blank" rel="noopener">&#128206; ' + escapeHtml(chat.attachment.name) + ' (clic para descargar)</a><button type="button" class="attachment-remove-btn" title="Quitar adjunto">&#215;</button></div>'
           : '';
 
         const sentMessages = activeMessages
@@ -2266,18 +2337,19 @@
         }
 
         const consoleMenuHtml = ''
-          + '<button type="button" class="console-item" data-command="resumen">/resumen<span class="console-item-desc">Resume los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
+          + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
+          + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
           + '<button type="button" class="console-item" data-command="eliminar">/eliminar<span class="console-item-desc">Lista las versiones para eliminarlas permanentemente</span></button>';
 
         let versionListHtml = '';
         if (isVersionPicker) {
           const versionRows = chatVersions.length
-            ? chatVersions.slice().reverse().map(v => '<button type="button" class="version-list-item' + (chat.viewingVersionId === v.id ? ' active' : '') + '" data-version-id="' + v.id + '">' + escapeHtml(v.label) + '</button>').join('')
+            ? chatVersions.slice().reverse().map(v => '<button type="button" class="version-list-item' + (chat.viewingVersionId === v.id ? ' active' : '') + '" data-version-id="' + v.id + '">' + formatVersionLineage(v.label, v.sourceLabel) + '</button>').join('')
             : '<div class="empty-state">Sin versiones guardadas</div>';
           versionListHtml = '<div class="version-list">'
             + '<div class="version-list-header"><span>&#128337; Versiones del chat</span><button type="button" class="version-list-close" title="Cerrar">&#215;</button></div>'
-            + '<button type="button" class="version-list-item' + (chat.viewingVersionId ? '' : ' active') + '" data-version-id="">Versión actual</button>'
+            + '<button type="button" class="version-list-item' + (chat.viewingVersionId ? '' : ' active') + '" data-version-id="">' + formatVersionLineage('Versión actual', chat.currentSourceLabel) + '</button>'
             + versionRows
             + '</div>';
         }
@@ -2285,11 +2357,11 @@
         let deleteListHtml = '';
         if (isDeletePicker) {
           const versionRows = chatVersions.length
-            ? chatVersions.slice().reverse().map(v => '<div class="version-list-row"><span class="version-list-label">' + escapeHtml(v.label) + '</span><button type="button" class="version-delete-btn" data-version-id="' + v.id + '" title="Eliminar permanentemente">&#128465;</button></div>').join('')
+            ? chatVersions.slice().reverse().map(v => '<div class="version-list-row"><span class="version-list-label">' + formatVersionLineage(v.label, v.sourceLabel) + '</span><button type="button" class="version-delete-btn" data-version-id="' + v.id + '" title="Eliminar permanentemente">&#128465;</button></div>').join('')
             : '<div class="empty-state">Sin versiones guardadas</div>';
           deleteListHtml = '<div class="version-list">'
             + '<div class="version-list-header"><span>&#128465; Eliminar versiones</span><button type="button" class="version-list-close" title="Cerrar">&#215;</button></div>'
-            + '<div class="version-list-row"><span class="version-list-label">Versión actual</span><button type="button" class="version-delete-btn" data-version-id="" title="Eliminar permanentemente">&#128465;</button></div>'
+            + '<div class="version-list-row"><span class="version-list-label">' + formatVersionLineage('Versión actual', chat.currentSourceLabel) + '</span><button type="button" class="version-delete-btn" data-version-id="" title="Eliminar permanentemente">&#128465;</button></div>'
             + versionRows
             + '</div>';
         }
@@ -2429,6 +2501,7 @@
 
           const [moved] = chatState.splice(fromIndex, 1);
           chatState.splice(chatState.indexOf(chat), 0, moved);
+          saveChatOrder();
           renderChats();
           requestAnimationFrame(() => animateReorder(prevRects));
         });
@@ -2622,7 +2695,14 @@
           const replyBtn = event.target.closest('.msg-reply');
           const deleteBtn = event.target.closest('.msg-delete');
           const replyJumpBtn = event.target.closest('.reply-jump-link');
+          const attachmentRemoveBtn = event.target.closest('.attachment-remove-btn');
           const truncEl = event.target.closest('.message-content.truncatable');
+          if (attachmentRemoveBtn) {
+            event.stopPropagation();
+            chat.attachment = null;
+            renderChats();
+            return;
+          }
           const showMoreBtn = event.target.closest('.show-more-messages');
           if (showMoreBtn) {
             event.stopPropagation();
@@ -3024,6 +3104,7 @@
         item.focused = item.id === id;
         item.flashHighlight = item.id === id;
       });
+      saveChatOrder();
       renderChats();
     }
 
@@ -3052,12 +3133,14 @@
         revealedOlderCount: 0,
         versions: [],
         viewingVersionId: null,
+        currentSourceLabel: null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
         temporalMode: false
       }));
       chatState.forEach(saveChatToStorage);
+      saveChatOrder();
       renderChats();
     }
 
@@ -3066,6 +3149,14 @@
       if (!saved.length) {
         createChats();
         return;
+      }
+      const order = loadChatOrder();
+      if (order.length) {
+        saved.sort((a, b) => {
+          const aPos = order.indexOf(a.name);
+          const bPos = order.indexOf(b.name);
+          return (aPos === -1 ? order.length : aPos) - (bPos === -1 ? order.length : bPos);
+        });
       }
       chatState = saved.map((item, i) => ({
         id: `chat-${Date.now()}-${i}`,
@@ -3091,6 +3182,7 @@
         revealedOlderCount: Number(item.revealedOlderCount) || 0,
         versions: Array.isArray(item.versions) ? item.versions : [],
         viewingVersionId: null,
+        currentSourceLabel: typeof item.currentSourceLabel === 'string' ? item.currentSourceLabel : null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -3155,6 +3247,7 @@
         if (chatState.length && !chatState.some(item => item.focused)) {
           chatState[0].focused = true;
         }
+        saveChatOrder();
         renderChats();
       }, 260);
     }
