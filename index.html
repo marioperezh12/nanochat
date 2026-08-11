@@ -70,7 +70,7 @@
         "bottom";
     }
     .app.sidebar-open {
-      --app-cols: 220px 1fr;
+      --app-cols: var(--sidebar-width, 220px) 1fr;
       grid-template-areas:
         "topbar topbar"
         "sidebar main"
@@ -90,6 +90,22 @@
       backdrop-filter: blur(16px);
       position: relative;
       z-index: 50;
+    }
+    .topbar-center {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+    }
+    .topbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
     }
 
     .engine-select { display: flex; align-items: center; gap: 6px; flex: none; }
@@ -114,7 +130,7 @@
       background: rgba(7, 18, 22, 0.98);
       color: var(--text);
     }
-    .topbar-view-toggles { display: flex; gap: 8px; margin-left: auto; }
+    .topbar-view-toggles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .view-toggle-btn {
       width: 30px;
       height: 30px;
@@ -132,6 +148,7 @@
 
     .sidebar {
       display: none;
+      position: relative;
       grid-area: sidebar;
       border-right: 1px solid var(--border);
       background: rgba(6, 18, 24, 0.92);
@@ -141,6 +158,30 @@
       gap: 6px;
     }
     .app.sidebar-open .sidebar { display: flex; }
+    .sidebar-resize-handle {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 6px;
+      height: 100%;
+      cursor: col-resize;
+      z-index: 5;
+    }
+    .sidebar-resize-handle:hover, .sidebar-resize-handle.resizing { background: rgba(65, 214, 199, 0.25); }
+    .sidebar-drop-zone {
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      padding: 16px 8px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.74rem;
+      flex: none;
+    }
+    .sidebar-drop-zone.drop-target {
+      border-color: #41d6c7;
+      color: #41d6c7;
+      background: rgba(65, 214, 199, 0.08);
+    }
     .sidebar-header {
       font-size: 0.72rem;
       text-transform: uppercase;
@@ -172,6 +213,11 @@
       white-space: nowrap;
     }
     .sidebar-item-icons { display: flex; gap: 4px; flex: none; color: var(--muted); font-size: 0.72rem; }
+    .sidebar-docked-chats {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
 
     .brand {
       display: flex;
@@ -202,8 +248,7 @@
     .brand-text span { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
 
     .panel-actions button,
-    .panel-input button,
-    .minimized-chip button {
+    .panel-input button {
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.02);
       color: var(--text);
@@ -353,6 +398,7 @@
       margin-bottom: 12px;
     }
     .section-head-actions { display: flex; align-items: center; gap: 8px; }
+    #columnsToggle { display: inline-flex; align-items: center; justify-content: center; }
 
     .section-head h1 {
       margin: 0;
@@ -363,6 +409,26 @@
       font-weight: 700;
     }
 
+    .workspace-settings { position: relative; }
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .section-head-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+    .section-head-actions .workspace-settings,
+    .section-head-actions > .settings-toggle {
+      flex: none;
+    }
     .workspace-settings { position: relative; }
     .settings-toggle {
       border: 1px solid var(--border);
@@ -400,6 +466,9 @@
       cursor: pointer;
     }
     .settings-item:hover { background: rgba(255,255,255,0.06); }
+    .columns-item {
+      white-space: nowrap;
+    }
 
     .chat-grid {
       display: grid;
@@ -409,6 +478,9 @@
       align-items: stretch;
       transition: grid-template-columns 220ms ease;
     }
+    .chat-grid.cols-1 { grid-template-columns: repeat(1, 1fr); }
+    .chat-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .chat-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
     .chat-grid.maximized { grid-template-columns: 1fr; grid-auto-rows: 70vh; }
     .chat-grid.single-row {
       flex: 1;
@@ -423,12 +495,13 @@
       background: rgba(12, 29, 35, 0.94);
       min-height: 0;
       height: 100%;
-      overflow: hidden;
+      overflow: visible;
       display: flex;
       flex-direction: column;
       box-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
       transition: opacity 220ms ease, transform 220ms ease, max-height 220ms ease;
       max-height: none;
+      isolation: isolate;
     }
     .privacy-overlay {
       position: absolute;
@@ -502,17 +575,32 @@
     }
 
     .panel-top {
-      height: 44px;
-      padding: 0 12px;
+      min-height: 44px;
+      height: auto;
+      padding: 8px 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      position: relative;
+      z-index: 40;
+      overflow: visible;
       border-bottom: 1px solid var(--border);
       background: rgba(255,255,255,0.02);
       cursor: grab;
     }
     .panel-top:active { cursor: grabbing; }
-    .panel-title { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: text; }
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+      max-width: 100%;
+      overflow: hidden;
+      cursor: text;
+    }
     .panel-dot {
       width: 8px;
       height: 8px;
@@ -531,6 +619,8 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
+      max-width: 100%;
     }
     .chat-title-input {
       background: rgba(255,255,255,0.02);
@@ -541,9 +631,22 @@
       font-size: 0.82rem;
       padding: 3px 8px;
       min-width: 120px;
+      max-width: 100%;
       outline: none;
     }
-    .panel-actions { display: flex; gap: 6px; }
+    .panel-actions {
+      display: flex;
+      gap: 6px;
+      flex: 0 1 auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      margin-left: auto;
+      max-width: 100%;
+      position: relative;
+      z-index: 120;
+    }
+    .panel-actions > * { flex: none; }
+    .panel-actions button { max-width: 100%; }
     .panel-history { position: relative; flex: none; }
     .history-menu {
       position: absolute;
@@ -558,7 +661,7 @@
       background: rgba(7, 18, 22, 0.98);
       box-shadow: var(--shadow);
       display: none;
-      z-index: 25;
+      z-index: 999;
     }
     .panel-history.open .history-menu { display: grid; gap: 4px; }
     .history-item {
@@ -580,6 +683,8 @@
       align-content: start;
       min-height: 0;
       overflow-y: hidden;
+      position: relative;
+      z-index: 0;
     }
     .scroll-to-bottom-btn {
       position: absolute;
@@ -627,7 +732,9 @@
       padding: 2px;
     }
     .message.user:hover .message-actions,
-    .message.assistant:hover .message-actions { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .message.assistant:hover .message-actions,
+    .message.summary-message:hover .message-actions,
+    .message.context-message:hover .message-actions { opacity: 1; transform: translateY(0); pointer-events: auto; }
     .message-actions button {
       border: none;
       background: none;
@@ -661,7 +768,7 @@
       background: rgba(7, 18, 22, 0.98);
       box-shadow: var(--shadow);
       display: none;
-      z-index: 25;
+      z-index: 999;
     }
     .mode-select.open .mode-menu { display: grid; gap: 4px; }
     .mode-item {
@@ -702,7 +809,7 @@
       background: rgba(7, 18, 22, 0.98);
       box-shadow: var(--shadow);
       display: none;
-      z-index: 25;
+      z-index: 999;
     }
     .panel-pins.open .pins-menu { display: grid; gap: 4px; }
 
@@ -719,7 +826,7 @@
       border-radius: 4px;
       background: rgba(7, 18, 22, 0.98);
       box-shadow: var(--shadow);
-      z-index: 25;
+      z-index: 999;
       min-width: 220px;
     }
     .panel-search.open .search-bar { display: flex; }
@@ -788,7 +895,7 @@
       background: rgba(7, 18, 22, 0.98);
       box-shadow: var(--shadow);
       display: none;
-      z-index: 25;
+      z-index: 999;
     }
     .panel-share.open .share-menu { display: grid; gap: 4px; }
     .share-item {
@@ -827,7 +934,7 @@
       background: rgba(7, 18, 22, 0.98);
       box-shadow: var(--shadow);
       display: none;
-      z-index: 25;
+      z-index: 999;
     }
     .panel-console.open .console-menu { display: grid; gap: 4px; }
     .console-item {
@@ -938,6 +1045,15 @@
       font-size: 0.74rem;
       text-align: center;
     }
+    .message.context-message {
+      max-width: 100%;
+      width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+      background: rgba(168, 85, 247, 0.14);
+      border-color: rgba(168, 85, 247, 0.4);
+      border-width: 1.5px;
+    }
 
     .version-banner {
       margin: 0 10px;
@@ -972,6 +1088,7 @@
       font-size: 0.74rem;
       text-align: center;
     }
+    .panel-body > .status-banner { margin: 0; flex: none; }
 
     .message-content.truncatable { cursor: pointer; }
 
@@ -1097,7 +1214,7 @@
       padding: 9px 10px;
       display: flex;
       gap: 8px;
-      align-items: center;
+      align-items: flex-start;
       position: relative;
     }
     .panel-input[hidden] { display: none; }
@@ -1115,7 +1232,7 @@
     }
     .chat-message-input {
       resize: none;
-      min-height: 36px;
+      min-height: 56px;
       max-height: 110px;
       overflow-y: auto;
       font-family: inherit;
@@ -1255,53 +1372,86 @@
 
     @media (max-width: 1024px) {
       .app { grid-template-rows: var(--topbar-height) 1fr var(--bottom-height); }
-      .topbar { flex-wrap: wrap; height: auto; padding: 12px; }
+      .topbar { flex-wrap: wrap; height: auto; padding: 12px; align-items: flex-start; }
       .brand { min-width: 0; }
+      .topbar-view-toggles { margin-left: 0; }
+      .engine-select, .workspace-settings, .topbar-view-toggles, .user-menu { flex: 1 1 auto; }
+      .brand { flex: 1 1 100%; }
       .main { padding: 12px; }
-      .chat-grid { grid-template-columns: 1fr; }
+      .section-head { align-items: flex-start; }
+      .section-head-actions { width: 100%; margin-left: 0; justify-content: flex-start; }
+      .workspace-settings .settings-menu {
+        left: 0;
+        right: auto;
+        min-width: 160px;
+      }
+      .chat-grid, .chat-grid.cols-1, .chat-grid.cols-2, .chat-grid.cols-3 { grid-template-columns: 1fr; }
+      .panel-top { height: auto; min-height: 44px; flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+      .panel-title { flex: 1 1 100%; }
+      .panel-actions { margin-left: 0; width: 100%; }
+    }
+    @media (max-width: 640px) {
+      .panel-top {
+        padding: 10px;
+      }
+      .panel-title strong {
+        white-space: normal;
+      }
+      .panel-actions {
+        gap: 4px;
+      }
+      .chat-title-input {
+        min-width: 0;
+        width: 100%;
+      }
+      .panel-actions button,
+      .panel-actions .mode-toggle,
+      .panel-actions .history-toggle,
+      .panel-actions .search-toggle,
+      .panel-actions .share-toggle,
+      .panel-actions .console-toggle,
+      .panel-actions .fav-toggle,
+      .panel-actions .key-toggle,
+      .panel-actions .temporal-toggle,
+      .panel-actions .min-btn,
+      .panel-actions .max-btn,
+      .panel-actions .close-btn {
+        transform: scale(0.95);
+        transform-origin: center;
+      }
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
+        <header class="topbar">
       <div class="brand">
         <div class="brand-mark"><img src="logo.png" alt="NanoChat" /></div>
-
       </div>
-      <div class="engine-select">
-        <label class="engine-select-label" for="engineSelect">Motor</label>
-        <select id="engineSelect">
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Gemini</option>
-          <option value="groq">Groq</option>
-          <option value="deepseek">DeepSeek</option>
-        </select>
-      </div>
-      <div class="workspace-settings" id="favoritesWrap">
-        <button type="button" class="settings-toggle" id="favoritesToggle" title="Favoritos">&#9733;</button>
-        <div class="settings-menu" id="favoritesMenu"></div>
-      </div>
-      <div class="workspace-settings" id="workspaceSettings">
-        <button type="button" class="settings-toggle" id="settingsToggle" title="Opciones">&#9881;</button>
-        <div class="settings-menu">
-          <button type="button" class="settings-item" id="newChatMenuItem">Iniciar nuevo Chat</button>
-          <button type="button" class="settings-item" id="setKeyMenuItem">Establecer Key</button>
-          <button type="button" class="settings-item" id="importChatMenuItem">Importar chat</button>
-          <button type="button" class="settings-item" id="privacyMenuItem">Chats privados</button>
+      <div class="topbar-center">
+        <div class="engine-select">
+          <label class="engine-select-label" for="engineSelect">Motor</label>
+          <select id="engineSelect">
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Gemini</option>
+            <option value="groq">Groq</option>
+            <option value="deepseek">DeepSeek</option>
+          </select>
         </div>
       </div>
-      <div class="topbar-view-toggles">
-        <button type="button" class="view-toggle-btn" id="sidebarToggleBtn" title="Barra lateral"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg></button>
-        <button type="button" class="view-toggle-btn" id="footerToggleBtn" title="Barra inferior"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="3" y1="15" x2="21" y2="15"></line></svg></button>
-      </div>
-      <div class="user-menu" id="userMenu">
-        <div class="user-badge" id="userBadge" title="Usuario">U</div>
-        <div class="user-dropdown">
-          <div class="user-dropdown-name" id="userDropdownName">Usuario</div>
-          <div class="user-dropdown-email" id="userDropdownEmail"></div>
-          <div class="user-dropdown-divider"></div>
-          <button type="button" class="logout-item" id="logoutBtn">Cerrar sesión</button>
+      <div class="topbar-right">
+        <div class="topbar-view-toggles">
+          <button type="button" class="view-toggle-btn" id="sidebarToggleBtn" title="Barra lateral"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="9" y1="4" x2="9" y2="20"></line></svg></button>
+          <button type="button" class="view-toggle-btn" id="footerToggleBtn" title="Barra inferior"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="3" y1="15" x2="21" y2="15"></line></svg></button>
+        </div>
+        <div class="user-menu" id="userMenu">
+          <div class="user-badge" id="userBadge" title="Usuario">U</div>
+          <div class="user-dropdown">
+            <div class="user-dropdown-name" id="userDropdownName">Usuario</div>
+            <div class="user-dropdown-email" id="userDropdownEmail"></div>
+            <div class="user-dropdown-divider"></div>
+            <button type="button" class="logout-item" id="logoutBtn">Cerrar sesi�n</button>
+          </div>
         </div>
       </div>
     </header>
@@ -1309,12 +1459,31 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">Chats</div>
       <div id="sidebarList"></div>
+      <div id="sidebarDockedChats" class="sidebar-docked-chats"></div>
+      <div class="sidebar-drop-zone" id="sidebarDropZone">Arrastrar chat acá</div>
+      <div class="sidebar-resize-handle" id="sidebarResizeHandle"></div>
     </aside>
 
     <main class="main" id="mainScroll">
       <div class="main-shell" id="mainShell">
         <div class="section-head">
           <h1>Workspace</h1>
+      <div class="section-head-actions">
+        <button type="button" class="settings-toggle" id="newChatBtn" title="Agregar nuevo chat">+</button>
+        <div class="workspace-settings" id="columnsWrap">
+          <button type="button" class="settings-toggle" id="columnsToggle" title="Columnas del workspace"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1"></rect><rect x="10" y="4" width="5" height="16" rx="1"></rect><rect x="17" y="4" width="4" height="16" rx="1"></rect></svg></button>
+          <div class="settings-menu">
+            <button type="button" class="settings-item columns-item" data-cols="1">1 Columna</button>
+            <button type="button" class="settings-item columns-item" data-cols="2">2 Columnas</button>
+            <button type="button" class="settings-item columns-item" data-cols="3">3 Columnas</button>
+          </div>
+        </div>
+        <button type="button" class="settings-toggle" id="workspaceFavToggle" title="Favorito">&#9733;</button>
+        <div class="workspace-settings" id="workspaceModeWrap">
+          <button type="button" class="settings-toggle" id="workspaceSettingsToggle" title="Opciones">&#9881;</button>
+          <div class="settings-menu" id="workspaceModeMenu"></div>
+        </div>
+      </div>
         </div>
         <section id="chatGrid" class="chat-grid"></section>
       </div>
@@ -1379,9 +1548,13 @@
 
   <script>
     const chatGrid = document.getElementById('chatGrid');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const columnsWrap = document.getElementById('columnsWrap');
+    const columnsToggle = document.getElementById('columnsToggle');
     const minimizedLauncher = document.getElementById('minimizedLauncher');
     const minimizedMenu = document.getElementById('minimizedMenu');
     const minimizedCount = document.getElementById('minimizedCount');
+    const sidebarDockedChats = document.getElementById('sidebarDockedChats');
     const mainShell = document.getElementById('mainShell');
     const mainScroll = document.getElementById('mainScroll');
     const scrollUpBtn = document.getElementById('scrollUpBtn');
@@ -1396,6 +1569,10 @@
     const favoritesWrap = document.getElementById('favoritesWrap');
     const favoritesToggle = document.getElementById('favoritesToggle');
     const favoritesMenu = document.getElementById('favoritesMenu');
+    const workspaceFavToggle = document.getElementById('workspaceFavToggle');
+    const workspaceModeWrap = document.getElementById('workspaceModeWrap');
+    const workspaceSettingsToggle = document.getElementById('workspaceSettingsToggle');
+    const workspaceModeMenu = document.getElementById('workspaceModeMenu');
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
@@ -1414,6 +1591,8 @@
     const appEl = document.querySelector('.app');
     const sidebar = document.getElementById('sidebar');
     const sidebarList = document.getElementById('sidebarList');
+    const sidebarDropZone = document.getElementById('sidebarDropZone');
+    const sidebarResizeHandle = document.getElementById('sidebarResizeHandle');
     const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
     const footerToggleBtn = document.getElementById('footerToggleBtn');
     const userMenu = document.getElementById('userMenu');
@@ -1428,6 +1607,7 @@
     const AUTH_STORAGE_KEY = 'nanochat_auth_user';
 
     let chatState = [];
+    let chatGridColumns = 3;
     let closeTimer = null;
     let openAiApiKey = '';
     let geminiApiKey = '';
@@ -1445,6 +1625,9 @@
     const DEEPSEEK_API_KEY_STORAGE = 'nanochat_deepseek_key';
     const ENGINE_STORAGE = 'nanochat_engine';
     const CHAT_ORDER_STORAGE = 'nanochat_order';
+    const GRID_COLUMNS_STORAGE = 'nanochat_grid_columns';
+    const SIDEBAR_WIDTH_STORAGE = 'nanochat_sidebar_width';
+    const TEMPORAL_MESSAGE_TTL = 120000;
     const PRIVACY_PASSWORD_STORAGE = 'nanochat_privacy_password';
     const CRYPTO_SALT = 'nanochat-local-salt-v1';
 
@@ -1543,6 +1726,7 @@
               revealedOlderCount: Number(chat.revealedOlderCount) || 0,
               versions: Array.isArray(chat.versions) ? chat.versions : [],
               currentSourceLabel: chat.currentSourceLabel || null,
+              contextMessage: chat.contextMessage || null,
               isPrivate: true
             }));
             return;
@@ -1560,6 +1744,7 @@
             revealedOlderCount: Number(chat.revealedOlderCount) || 0,
             versions: Array.isArray(chat.versions) ? chat.versions : [],
             currentSourceLabel: chat.currentSourceLabel || null,
+            contextMessage: chat.contextMessage || null,
             isPrivate: true
           }));
           return;
@@ -1573,6 +1758,7 @@
           revealedOlderCount: Number(chat.revealedOlderCount) || 0,
           versions: Array.isArray(chat.versions) ? chat.versions : [],
           currentSourceLabel: chat.currentSourceLabel || null,
+          contextMessage: chat.contextMessage || null,
           isPrivate: false
         }));
       } catch (error) {}
@@ -1776,6 +1962,7 @@
         id: `chat-${Date.now()}-${chatState.length}`,
         name: generateUniqueChatName(),
         minimized: false,
+        docked: false,
         maximized: false,
         closing: false,
         deleted: false,
@@ -1796,6 +1983,7 @@
         versions: [],
         viewingVersionId: null,
         currentSourceLabel: null,
+        contextMessage: null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -2013,7 +2201,24 @@
         chat.consoleShowDelete = true;
         chat.consoleShowVersions = false;
         renderChats();
+      } else if (command === 'contexto') {
+        handleContextoCommand(chat);
       }
+    }
+
+    function handleContextoCommand(chat) {
+      chat.draftText = '/contexto: ' + (chat.contextMessage ? (chat.contextMessage.rawText || chat.contextMessage.content || '') : '');
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) {}
+      });
     }
 
     function openImportModal() {
@@ -2047,6 +2252,7 @@
         id: `chat-${Date.now()}-${chatState.length}`,
         name,
         minimized: false,
+        docked: false,
         maximized: false,
         closing: false,
         deleted: false,
@@ -2067,6 +2273,7 @@
         versions: Array.isArray(parsed.versions) ? parsed.versions : [],
         viewingVersionId: null,
         currentSourceLabel: typeof parsed.currentSourceLabel === 'string' ? parsed.currentSourceLabel : null,
+        contextMessage: parsed.contextMessage || null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -2082,25 +2289,27 @@
 
     function renderMinimizedMenu() {
       const minimized = chatState.filter(chat => chat.minimized && !chat.deleted);
+      const docked = chatState.filter(chat => chat.docked && !chat.deleted);
       minimizedCount.textContent = minimized.length;
       minimizedMenu.innerHTML = '';
+      sidebarDropZone.innerHTML = '';
 
-      if (!minimized.length) {
-        minimizedMenu.innerHTML = '<div class="empty-state">No hay chats minimizados</div>';
-        return;
+      if (!docked.length) {
+        sidebarDropZone.innerHTML = '<div class="empty-state">Arrastra un chat ac&aacute;</div>';
       }
 
-      minimized.forEach(chat => {
+      docked.forEach(chat => {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'minimized-chip';
-        button.innerHTML = `<div><strong>${chat.name}</strong><span>Restaurar al panel</span></div><div class="arrow">?</div>`;
+        button.className = 'sidebar-docked-item';
+        button.textContent = chat.name;
         button.addEventListener('click', (event) => {
           event.stopPropagation();
-          restoreChat(chat.id);
+          showChatInWorkspace(chat.id);
         });
-        minimizedMenu.appendChild(button);
+        sidebarDockedChats.appendChild(button);
       });
+
     }
 
     function escapeHtml(value) {
@@ -2196,6 +2405,8 @@
     function renderChats() {
       const maximizedChat = chatState.find(chat => chat.maximized && !chat.deleted);
       const focusedChat = chatState.find(chat => chat.focused && !chat.deleted);
+      chatGrid.classList.remove('cols-1', 'cols-2', 'cols-3');
+      chatGrid.classList.add('cols-' + chatGridColumns);
       chatGrid.classList.toggle('maximized', Boolean(maximizedChat));
       mainShell.style.minHeight = focusedChat ? 'calc(100vh - var(--topbar-height) - var(--bottom-height) - 20px)' : '100%';
 
@@ -2205,8 +2416,9 @@
       chatGrid.classList.toggle('single-row', isSingleRow);
 
       chatGrid.innerHTML = '';
+      sidebarDockedChats.innerHTML = '';
       chatState.forEach(chat => {
-        if (chat.minimized || chat.deleted) return;
+        if ((chat.minimized || chat.deleted) && !chat.docked) return;
         const justGainedFocus = chat.focused && !chat._wasFocused;
         chat._wasFocused = chat.focused;
 
@@ -2260,8 +2472,10 @@
                   ? escapeHtml(plainSummary.slice(0, 200)) + '..........'
                   : (message.display || message.content);
                 const body = '<div class="message-content' + (isTruncatable ? ' truncatable' : '') + '" data-msg-index="' + i + '">' + contentHtml + '</div>';
-                const deleteBtn = isReadOnly ? '' : '<div class="message-actions"><button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button></div>';
-                return '<div class="message summary-message" data-msg-index="' + i + '">' + body + deleteBtn + '</div>';
+                const summaryReplicateBtn = '<button type="button" class="msg-replicate" data-msg-index="' + i + '" title="Reutilizar en caja de mensaje">&#128229;</button>';
+                const summaryDeleteBtn = isReadOnly ? '' : '<button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button>';
+                const summaryActions = '<div class="message-actions">' + summaryReplicateBtn + summaryDeleteBtn + '</div>';
+                return '<div class="message summary-message" data-msg-index="' + i + '">' + body + summaryActions + '</div>';
               }
               const cls = message.role === 'user' ? 'user' : 'assistant';
               const isPinned = activePinnedIndices.includes(i);
@@ -2274,15 +2488,16 @@
                 : (message.display || message.content);
               const body = '<div class="message-content' + (isTruncatable ? ' truncatable' : '') + '" data-msg-index="' + i + '">' + contentHtml + '</div>';
               const pinBtn = '<button type="button" class="msg-pin' + (isPinned ? ' active' : '') + '" data-msg-index="' + i + '" title="' + (isPinned ? 'Desanclar' : 'Anclar') + '">&#128204;</button>';
+              const replicateBtn = '<button type="button" class="msg-replicate" data-msg-index="' + i + '" title="Reutilizar en caja de mensaje">&#128229;</button>';
               let actions;
               if (isReadOnly) {
-                actions = '<div class="message-actions">' + pinBtn + '</div>';
+                actions = '<div class="message-actions">' + pinBtn + replicateBtn + '</div>';
               } else {
                 const replyBtn = '<button type="button" class="msg-reply" data-msg-index="' + i + '" title="Responder">&#8617;</button>';
                 const deleteBtn = '<button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button>';
                 actions = cls === 'user'
-                  ? '<div class="message-actions"><button type="button" class="msg-edit" data-msg-index="' + i + '" title="Editar">&#9998;</button><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replyBtn + deleteBtn + '</div>'
-                  : '<div class="message-actions"><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replyBtn + deleteBtn + '</div>';
+                  ? '<div class="message-actions"><button type="button" class="msg-edit" data-msg-index="' + i + '" title="Editar">&#9998;</button><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replicateBtn + replyBtn + deleteBtn + '</div>'
+                  : '<div class="message-actions"><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replicateBtn + replyBtn + deleteBtn + '</div>';
               }
               return '<div class=\"message ' + cls + (isPinned ? ' pinned' : '') + '\" data-msg-index=\"' + i + '\">' + body + actions + '</div>';
             }).join('')
@@ -2291,6 +2506,18 @@
         const temporalNoticeHtml = (chat.temporalMode && !isReadOnly && !isPickerMode)
           ? '<div class="message temporal-notice">&#128337; Los mensajes de este chat son temporales: se eliminarán automáticamente 1 minuto después de enviarse.</div>'
           : '';
+
+        let contextMessageHtml = '';
+        if (chat.contextMessage && !isPickerMode) {
+          const contextPlain = (chat.contextMessage.rawText || chat.contextMessage.content || '').trim();
+          const contextContentHtml = chat.contextMessage.display || escapeHtml(contextPlain);
+          contextMessageHtml = '<div class="message context-message" data-context-message="1">'
+            + '<div class="message-content">' + contextContentHtml + '</div>'
+            + '<div class="message-actions">'
+            + '<button type="button" class="msg-replicate-context" title="Reutilizar en caja de mensaje">&#128229;</button>'
+            + '<button type="button" class="context-remove-btn" title="Quitar mensaje de contexto">&#128465;</button>'
+            + '</div></div>';
+        }
 
         const attachmentNote = (chat.attachment && !isReadOnly)
           ? '<div class="message attachment-note"><a class="attachment-link" href="' + chat.attachment.url + '" download="' + escapeHtml(chat.attachment.name) + '" target="_blank" rel="noopener">&#128206; ' + escapeHtml(chat.attachment.name) + ' (clic para descargar)</a><button type="button" class="attachment-remove-btn" title="Quitar adjunto">&#215;</button></div>'
@@ -2340,7 +2567,8 @@
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
-          + '<button type="button" class="console-item" data-command="eliminar">/eliminar<span class="console-item-desc">Lista las versiones para eliminarlas permanentemente</span></button>';
+          + '<button type="button" class="console-item" data-command="eliminar">/eliminar<span class="console-item-desc">Lista las versiones para eliminarlas permanentemente</span></button>'
+          + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>';
 
         let versionListHtml = '';
         if (isVersionPicker) {
@@ -2383,12 +2611,7 @@
             <div class="panel-actions">
               <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">${chat.favorite ? '&#9733;' : '&#9734;'}</button>
               <button type="button" class="key-toggle${chat.isPrivate ? ' active' : ''}" title="${chat.isPrivate ? 'Chat privado' : 'Proteger chat con contraseña'}">&#128273;</button>
-              <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#128337;</button>
-              <div class="mode-select">
-                <button type="button" class="mode-toggle" title="Modo de respuesta: ${modeLabel}">&#9881;</button>
-                <div class="mode-menu">${modeMenuItems}</div>
-              </div>
-              <div class="panel-pins">
+              <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#128337;</button>              <div class="panel-pins">
                 <button type="button" class="pins-toggle" title="Mensajes anclados">&#128204;</button>
                 <div class="pins-menu">${pinsMenuHtml}</div>
               </div>
@@ -2420,7 +2643,7 @@
               <button type="button" class="close-btn" title="Cerrar">&#215;</button>
             </div>
           </div>
-          <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (temporalNoticeHtml + history + attachmentNote))}</div>
+          <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
           <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
           ${statusBannerHtml}
           ${versionBannerHtml}
@@ -2432,7 +2655,7 @@
                 <button type="button" class="attach-file-btn">Adjuntar archivo</button>
               </div>
             </div>
-            <textarea class="chat-message-input" rows="1" placeholder="${chat.editingIndex != null ? 'Editando mensaje...' : 'Escribe un mensaje...'}"></textarea>
+            <textarea class="chat-message-input" rows="2" placeholder="${chat.editingIndex != null ? 'Editando mensaje...' : 'Escribe un mensaje...'}"></textarea>
             <button type="button" class="send-btn">Enviar</button>
           </div>
           ${(chat.isPrivate && !chat.unlocked) ? '<div class="privacy-overlay"><div class="privacy-overlay-box"><div>&#128274; Chat privado</div><div class="privacy-overlay-form"><input type="password" class="privacy-password-input" placeholder="Contraseña" autocomplete="off" /><button type="button" class="privacy-unlock-btn" title="Desbloquear">&#128274;</button></div><div class="privacy-overlay-error"></div></div></div>' : ''}
@@ -2492,7 +2715,11 @@
           if (!draggedId || draggedId === chat.id) return;
           const fromIndex = chatState.findIndex(item => item.id === draggedId);
           const toIndex = chatState.findIndex(item => item.id === chat.id);
-          if (fromIndex === -1 || toIndex === -1) return;
+          if (fromIndex === -1) {
+            restoreChat(draggedId);
+            return;
+          }
+          if (toIndex === -1) return;
 
           const prevRects = {};
           chatGrid.querySelectorAll('.chat-panel').forEach(p => {
@@ -2500,6 +2727,8 @@
           });
 
           const [moved] = chatState.splice(fromIndex, 1);
+          moved.docked = false;
+          moved.minimized = false;
           chatState.splice(chatState.indexOf(chat), 0, moved);
           saveChatOrder();
           renderChats();
@@ -2700,14 +2929,40 @@
           const copyBtn = event.target.closest('.msg-copy');
           const codeCopyBtn = event.target.closest('.code-copy');
           const pinBtn = event.target.closest('.msg-pin');
+          const replicateBtn = event.target.closest('.msg-replicate');
           const replyBtn = event.target.closest('.msg-reply');
           const deleteBtn = event.target.closest('.msg-delete');
           const replyJumpBtn = event.target.closest('.reply-jump-link');
           const attachmentRemoveBtn = event.target.closest('.attachment-remove-btn');
+          const replicateContextBtn = event.target.closest('.msg-replicate-context');
+          const contextRemoveBtn = event.target.closest('.context-remove-btn');
           const truncEl = event.target.closest('.message-content.truncatable');
           if (attachmentRemoveBtn) {
             event.stopPropagation();
             chat.attachment = null;
+            renderChats();
+            return;
+          }
+          if (replicateContextBtn) {
+            event.stopPropagation();
+            const text = chat.contextMessage ? (chat.contextMessage.rawText || chat.contextMessage.content || '') : '';
+            if (!text) return;
+            chat.draftText = text;
+            renderChats();
+            requestAnimationFrame(() => {
+              const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+              if (freshInput) {
+                freshInput.focus();
+                freshInput.style.height = 'auto';
+                freshInput.style.height = freshInput.scrollHeight + 'px';
+              }
+            });
+            return;
+          }
+          if (contextRemoveBtn) {
+            event.stopPropagation();
+            chat.contextMessage = null;
+            saveChatToStorage(chat);
             renderChats();
             return;
           }
@@ -2793,6 +3048,24 @@
             }
             return;
           }
+          if (replicateBtn) {
+            event.stopPropagation();
+            const idx = Number(replicateBtn.getAttribute('data-msg-index'));
+            const message = activeMessages[idx];
+            const text = message ? (message.rawText || message.content || '') : '';
+            if (!text) return;
+            chat.draftText = text;
+            renderChats();
+            requestAnimationFrame(() => {
+              const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+              if (freshInput) {
+                freshInput.focus();
+                freshInput.style.height = 'auto';
+                freshInput.style.height = freshInput.scrollHeight + 'px';
+              }
+            });
+            return;
+          }
           if (codeCopyBtn) {
             event.stopPropagation();
             const code = codeCopyBtn.getAttribute('data-code') || '';
@@ -2815,18 +3088,20 @@
         const modeWrap = panel.querySelector('.mode-select');
         const modeToggle = panel.querySelector('.mode-toggle');
         const modeMenu = panel.querySelector('.mode-menu');
-        modeToggle.addEventListener('click', (event) => {
-          event.stopPropagation();
-          modeWrap.classList.toggle('open');
-        });
-        modeMenu.addEventListener('click', (event) => {
-          const item = event.target.closest('.mode-item');
-          if (!item) return;
-          event.stopPropagation();
-          chat.responseMode = item.getAttribute('data-mode') || null;
-          modeWrap.classList.remove('open');
-          renderChats();
-        });
+        if (modeWrap && modeToggle && modeMenu) {
+          modeToggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            modeWrap.classList.toggle('open');
+          });
+          modeMenu.addEventListener('click', (event) => {
+            const item = event.target.closest('.mode-item');
+            if (!item) return;
+            event.stopPropagation();
+            chat.responseMode = item.getAttribute('data-mode') || null;
+            modeWrap.classList.remove('open');
+            renderChats();
+          });
+        }
 
         const searchWrap = panel.querySelector('.panel-search');
         const searchToggle = panel.querySelector('.search-toggle');
@@ -3009,7 +3284,8 @@
           });
         }
 
-        chatGrid.appendChild(panel);
+        const targetContainer = chat.docked ? sidebarDockedChats : chatGrid;
+        targetContainer.appendChild(panel);
         const panelBody = panel.querySelector('.panel-body');
         panelBody.style.overflowY = chat.focused ? 'auto' : 'hidden';
         panel.addEventListener('mouseenter', () => {
@@ -3047,6 +3323,12 @@
               return;
             }
           }
+          if (chat.contextMessage && !chat._contextScrollDone && !isPickerMode) {
+            chat._contextScrollDone = true;
+            panelBody.scrollTop = 0;
+            updateScrollToBottomVisibility();
+            return;
+          }
           panelBody.scrollTop = panelBody.scrollHeight;
           updateScrollToBottomVisibility();
         });
@@ -3071,6 +3353,7 @@
       const chat = chatState.find(item => item.id === id);
       if (!chat) return;
       chat.minimized = false;
+      chat.docked = false;
       chatState.forEach(item => {
         item.focused = item.id === id;
         item.flashHighlight = item.id === id;
@@ -3097,6 +3380,7 @@
     }
 
     function renderFavoritesMenu() {
+      if (!favoritesMenu) return;
       const favorites = chatState.filter(chat => chat.favorite && !chat.deleted);
       favoritesMenu.innerHTML = favorites.length
         ? favorites.map(chat => '<button type="button" class="settings-item" data-chat-id="' + chat.id + '">' + escapeHtml(chat.name) + '</button>').join('')
@@ -3122,6 +3406,7 @@
         id: `chat-${Date.now()}-${i}`,
         name: `Chat ${i + 1}`,
         minimized: false,
+        docked: false,
         maximized: false,
         closing: false,
         deleted: false,
@@ -3142,6 +3427,7 @@
         versions: [],
         viewingVersionId: null,
         currentSourceLabel: null,
+        contextMessage: null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -3170,6 +3456,7 @@
         id: `chat-${Date.now()}-${i}`,
         name: item.name,
         minimized: false,
+        docked: false,
         maximized: false,
         closing: false,
         deleted: false,
@@ -3191,6 +3478,7 @@
         versions: Array.isArray(item.versions) ? item.versions : [],
         viewingVersionId: null,
         currentSourceLabel: typeof item.currentSourceLabel === 'string' ? item.currentSourceLabel : null,
+        contextMessage: item.contextMessage || null,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
@@ -3211,6 +3499,7 @@
       const chat = chatState.find(item => item.id === id);
       if (!chat) return;
       chat.minimized = true;
+      chat.docked = false;
       chat.maximized = false;
       chat.focused = false;
       renderChats();
@@ -3234,6 +3523,7 @@
       const chat = chatState.find(item => item.id === id);
       if (!chat) return;
       chat.minimized = false;
+      chat.docked = false;
       chat.maximized = false;
       chat.focused = true;
       chatState.forEach(item => { if (item.id !== id) item.focused = false; });
@@ -3386,6 +3676,22 @@
       const text = input.value.trim();
       if (!text) return;
 
+      const contextoMatch = text.match(/^\/contexto:\s*(.*)$/is);
+      if (contextoMatch) {
+        const contextoText = contextoMatch[1].trim();
+        chat.contextMessage = contextoText
+          ? { content: contextoText, display: formatMarkdown(contextoText), rawText: contextoText }
+          : null;
+        chat._contextScrollDone = false;
+        chat.focused = true;
+        chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+        input.value = '';
+        chat.draftText = '';
+        saveChatToStorage(chat);
+        renderChats();
+        return;
+      }
+
       if (chat.editingIndex != null) {
         chat.messages = chat.messages.slice(0, chat.editingIndex);
         chat.editingIndex = null;
@@ -3411,7 +3717,7 @@
       }
       chat.replyingToIndex = null;
       const userMessage = { role: 'user', content: userContent, display: displayContent, rawText: text };
-      if (chat.temporalMode) userMessage.expiresAt = Date.now() + 60000;
+      if (chat.temporalMode) userMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
       chat.messages.push(userMessage);
       chat.attachment = null;
       chat.focused = true;
@@ -3439,6 +3745,9 @@
         const engineMessages = chat.messages
           .filter(message => !message.typing)
           .map(message => ({ role: message.role, content: message.content }));
+        if (chat.contextMessage && chat.contextMessage.content) {
+          engineMessages.unshift({ role: 'user', content: '[Contexto]: ' + chat.contextMessage.content });
+        }
 
         let reply;
         if (selectedEngine === 'gemini') {
@@ -3453,7 +3762,7 @@
 
         const typingIndex = chat.messages.indexOf(typingMessage);
         const replyMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply) };
-        if (chat.temporalMode) replyMessage.expiresAt = Date.now() + 60000;
+        if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
         if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
         chat.blinked = true;
         saveChatToStorage(chat);
@@ -3466,7 +3775,7 @@
       } catch (error) {
         const errorText = error && error.message ? error.message : ('No se pudo conectar con ' + engineName + '.');
         const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText) };
-        if (chat.temporalMode) errorMessage.expiresAt = Date.now() + 60000;
+        if (chat.temporalMode) errorMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
         const typingIndex = chat.messages.indexOf(typingMessage);
         if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
         saveChatToStorage(chat);
@@ -3545,71 +3854,133 @@
     });
 
     document.addEventListener('click', (event) => {
-      if (!minimizedLauncher.contains(event.target)) {
+      if (minimizedLauncher && !minimizedLauncher.contains(event.target)) {
         minimizedLauncher.classList.remove('open');
         minimizedLauncher.setAttribute('aria-expanded', 'false');
       }
       document.querySelectorAll('.panel-attach.open, .panel-history.open, .mode-select.open, .panel-pins.open, .panel-share.open, .panel-search.open, .panel-console.open').forEach(el => {
         if (!el.contains(event.target)) el.classList.remove('open');
       });
-      if (!workspaceSettings.contains(event.target)) {
+      if (workspaceSettings && !workspaceSettings.contains(event.target)) {
         workspaceSettings.classList.remove('open');
       }
-      if (!favoritesWrap.contains(event.target)) {
+      if (favoritesWrap && !favoritesWrap.contains(event.target)) {
         favoritesWrap.classList.remove('open');
+      }
+      if (columnsWrap && !columnsWrap.contains(event.target)) {
+        columnsWrap.classList.remove('open');
       }
     });
 
-    settingsToggle.addEventListener('click', (event) => {
+    if (settingsToggle && workspaceSettings) {
+      settingsToggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        workspaceSettings.classList.toggle('open');
+      });
+    }
+    newChatBtn.addEventListener('click', () => addNewChat());
+    columnsToggle.addEventListener('click', (event) => {
       event.stopPropagation();
-      workspaceSettings.classList.toggle('open');
+      columnsWrap.classList.toggle('open');
     });
-    favoritesToggle.addEventListener('click', (event) => {
-      event.stopPropagation();
-      favoritesWrap.classList.toggle('open');
-    });
-    favoritesMenu.addEventListener('click', (event) => {
-      const item = event.target.closest('.settings-item');
+    columnsWrap.addEventListener('click', (event) => {
+      const item = event.target.closest('.columns-item');
       if (!item) return;
       event.stopPropagation();
-      const id = item.getAttribute('data-chat-id');
-      favoritesWrap.classList.remove('open');
-      bringChatToFront(id);
+      const cols = Number(item.getAttribute('data-cols'));
+      chatGridColumns = (cols === 1 || cols === 2) ? cols : 3;
+      try { localStorage.setItem(GRID_COLUMNS_STORAGE, String(chatGridColumns)); } catch (error) {}
+      columnsWrap.classList.remove('open');
+      renderChats();
     });
-    newChatMenuItem.addEventListener('click', () => {
-      workspaceSettings.classList.remove('open');
-      addNewChat();
-    });
-    setKeyMenuItem.addEventListener('click', () => {
-      workspaceSettings.classList.remove('open');
-      openKeyModal();
-    });
-    closeKeyModalBtn.addEventListener('click', closeKeyModal);
-    keyModalOverlay.addEventListener('click', (event) => {
-      if (event.target === keyModalOverlay) closeKeyModal();
-    });
-    saveKeysBtn.addEventListener('click', saveKeysFromModal);
+    if (workspaceFavToggle) {
+      workspaceFavToggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const chat = chatState.find(item => item.focused && !item.deleted);
+        if (!chat) return;
+        chat.favorite = !chat.favorite;
+        saveChatToStorage(chat);
+        renderChats();
+      });
+    }
+    function renderWorkspaceModeMenu() {
+      if (!workspaceModeMenu) return;
+      const chat = chatState.find(item => item.focused && !item.deleted);
+      if (!chat) {
+        workspaceModeMenu.innerHTML = '<div class="empty-state">Sin chat enfocado</div>';
+        return;
+      }
+      workspaceModeMenu.innerHTML = [
+        { key: '', label: 'Normal' },
+        { key: 'short', label: 'Respuesta corta' },
+        { key: 'complex', label: 'Respuesta compleja' }
+      ].map(opt => '<button type="button" class="settings-item columns-item" data-mode="' + opt.key + '">' + opt.label + '</button>').join('');
+    }
+    if (workspaceSettingsToggle && workspaceModeWrap && workspaceModeMenu) {
+      workspaceSettingsToggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        renderWorkspaceModeMenu();
+        workspaceModeWrap.classList.toggle('open');
+      });
+      workspaceModeMenu.addEventListener('click', (event) => {
+        const item = event.target.closest('.settings-item');
+        if (!item) return;
+        event.stopPropagation();
+        const chat = chatState.find(item => item.focused && !item.deleted);
+        if (!chat) return;
+        chat.responseMode = item.getAttribute('data-mode') || null;
+        workspaceModeWrap.classList.remove('open');
+        renderChats();
+      });
+    }
+    if (newChatMenuItem) {
+      newChatMenuItem.addEventListener('click', () => {
+        workspaceSettings?.classList.remove('open');
+        addNewChat();
+      });
+    }
+    if (setKeyMenuItem) {
+      setKeyMenuItem.addEventListener('click', () => {
+        workspaceSettings?.classList.remove('open');
+        openKeyModal();
+      });
+    }
+    if (closeKeyModalBtn) closeKeyModalBtn.addEventListener('click', closeKeyModal);
+    if (keyModalOverlay) {
+      keyModalOverlay.addEventListener('click', (event) => {
+        if (event.target === keyModalOverlay) closeKeyModal();
+      });
+    }
+    if (saveKeysBtn) saveKeysBtn.addEventListener('click', saveKeysFromModal);
 
-    importChatMenuItem.addEventListener('click', () => {
-      workspaceSettings.classList.remove('open');
-      openImportModal();
-    });
-    loadImportBtn.addEventListener('click', loadImportedChat);
-    closeImportModalBtn.addEventListener('click', closeImportModal);
-    importModalOverlay.addEventListener('click', (event) => {
-      if (event.target === importModalOverlay) closeImportModal();
-    });
+    if (importChatMenuItem) {
+      importChatMenuItem.addEventListener('click', () => {
+        workspaceSettings?.classList.remove('open');
+        openImportModal();
+      });
+    }
+    if (loadImportBtn) loadImportBtn.addEventListener('click', loadImportedChat);
+    if (closeImportModalBtn) closeImportModalBtn.addEventListener('click', closeImportModal);
+    if (importModalOverlay) {
+      importModalOverlay.addEventListener('click', (event) => {
+        if (event.target === importModalOverlay) closeImportModal();
+      });
+    }
 
-    privacyMenuItem.addEventListener('click', () => {
-      workspaceSettings.classList.remove('open');
-      pendingPrivacyChatId = null;
-      openPrivacyPasswordModal();
-    });
-    savePrivacyPasswordBtn.addEventListener('click', savePrivacyPasswordFromModal);
-    closePrivacyModalBtn.addEventListener('click', closePrivacyPasswordModal);
-    privacyModalOverlay.addEventListener('click', (event) => {
-      if (event.target === privacyModalOverlay) closePrivacyPasswordModal();
-    });
+    if (privacyMenuItem) {
+      privacyMenuItem.addEventListener('click', () => {
+        workspaceSettings?.classList.remove('open');
+        pendingPrivacyChatId = null;
+        openPrivacyPasswordModal();
+      });
+    }
+    if (savePrivacyPasswordBtn) savePrivacyPasswordBtn.addEventListener('click', savePrivacyPasswordFromModal);
+    if (closePrivacyModalBtn) closePrivacyModalBtn.addEventListener('click', closePrivacyPasswordModal);
+    if (privacyModalOverlay) {
+      privacyModalOverlay.addEventListener('click', (event) => {
+        if (event.target === privacyModalOverlay) closePrivacyPasswordModal();
+      });
+    }
 
     function setViewMode(mode) {
       appEl.classList.toggle('sidebar-open', mode === 'sidebar');
@@ -3625,6 +3996,67 @@
       if (!item) return;
       showChatInWorkspace(item.getAttribute('data-chat-id'));
     });
+
+    sidebarDropZone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      sidebarDropZone.classList.add('drop-target');
+    });
+    sidebarDropZone.addEventListener('dragleave', () => {
+      sidebarDropZone.classList.remove('drop-target');
+    });
+    sidebarDropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      sidebarDropZone.classList.remove('drop-target');
+      const draggedId = event.dataTransfer.getData('text/plain');
+      if (!draggedId) return;
+      const chat = chatState.find(item => item.id === draggedId);
+      if (!chat) return;
+      chat.minimized = false;
+      chat.docked = true;
+      chat.maximized = false;
+      chat.focused = false;
+      renderChats();
+    });
+
+    chatGrid.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    });
+    chatGrid.addEventListener('drop', (event) => {
+      const draggedId = event.dataTransfer && event.dataTransfer.getData('text/plain');
+      if (!draggedId) return;
+      event.preventDefault();
+      const targetPanel = event.target.closest('.chat-panel');
+      if (targetPanel) return;
+      restoreChat(draggedId);
+    });
+
+    let sidebarResizing = false;
+    sidebarResizeHandle.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      sidebarResizing = true;
+      sidebarResizeHandle.classList.add('resizing');
+      sidebarResizeHandle.setPointerCapture(event.pointerId);
+    });
+    sidebarResizeHandle.addEventListener('pointermove', (event) => {
+      if (!sidebarResizing) return;
+      const sidebarRect = sidebar.getBoundingClientRect();
+      const width = Math.min(480, Math.max(160, event.clientX - sidebarRect.left));
+      appEl.style.setProperty('--sidebar-width', width + 'px');
+    });
+    const stopSidebarResize = (event) => {
+      if (!sidebarResizing) return;
+      sidebarResizing = false;
+      sidebarResizeHandle.classList.remove('resizing');
+      const width = parseFloat(getComputedStyle(appEl).getPropertyValue('--sidebar-width'));
+      if (width) {
+        try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE, String(Math.round(width))); } catch (error) {}
+      }
+    };
+    sidebarResizeHandle.addEventListener('pointerup', stopSidebarResize);
+    sidebarResizeHandle.addEventListener('pointercancel', stopSidebarResize);
 
     function getChatRowStep() {
       const styles = getComputedStyle(chatGrid);
@@ -3692,6 +4124,16 @@
           engineSelect.value = selectedEngine;
         }
       } catch (error) {}
+      try {
+        const savedCols = Number(localStorage.getItem(GRID_COLUMNS_STORAGE));
+        if (savedCols === 1 || savedCols === 2 || savedCols === 3) chatGridColumns = savedCols;
+      } catch (error) {}
+      try {
+        const savedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE));
+        if (savedWidth >= 160 && savedWidth <= 480) {
+          appEl.style.setProperty('--sidebar-width', savedWidth + 'px');
+        }
+      } catch (error) {}
       initChats();
     }
 
@@ -3710,7 +4152,9 @@
         if (!chat.messages.some(message => message.expiresAt && message.expiresAt <= now)) return;
         const keptIndices = [];
         chat.messages = chat.messages.filter((message, idx) => {
-          const keep = !(message.expiresAt && message.expiresAt <= now);
+          const expired = message.expiresAt && message.expiresAt <= now;
+          const isPinned = chat.pinnedIndices.includes(idx);
+          const keep = !expired || isPinned;
           if (keep) keptIndices.push(idx);
           return keep;
         });
@@ -3732,3 +4176,9 @@
   </script>
 </body>
 </html>
+
+
+
+
+
+
