@@ -99,13 +99,18 @@
       align-items: center;
       justify-content: center;
       pointer-events: auto;
+      z-index: 1;
     }
     .topbar-right {
       margin-left: auto;
       display: flex;
       align-items: center;
-      gap: 12px;
-      min-width: 0;
+      gap: 10px;
+      min-width: max-content;
+      flex: 0 0 auto;
+      flex-wrap: nowrap;
+      position: relative;
+      z-index: 2;
     }
 
     .engine-select { display: flex; align-items: center; gap: 6px; flex: none; }
@@ -130,7 +135,7 @@
       background: rgba(7, 18, 22, 0.98);
       color: var(--text);
     }
-    .topbar-view-toggles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .topbar-view-toggles { display: flex; gap: 8px; flex-wrap: nowrap; justify-content: flex-end; flex: 0 0 auto; }
     .view-toggle-btn {
       width: 30px;
       height: 30px;
@@ -143,6 +148,7 @@
       align-items: center;
       justify-content: center;
       flex: none;
+      flex-shrink: 0;
     }
     .view-toggle-btn.active { color: #41d6c7; border-color: #41d6c7; }
 
@@ -509,7 +515,7 @@
       isolation: isolate;
     }
     .chat-panel.docked {
-      height: 400px;
+      height: 600px;
     }
     .privacy-overlay {
       position: absolute;
@@ -1422,6 +1428,7 @@
       .topbar { flex-wrap: wrap; height: auto; padding: 12px; align-items: flex-start; }
       .brand { min-width: 0; }
       .topbar-view-toggles { margin-left: 0; }
+      .topbar-right { width: auto; justify-content: flex-end; margin-left: auto; }
       .engine-select, .workspace-settings, .topbar-view-toggles, .user-menu { flex: 1 1 auto; }
       .brand { flex: 1 1 100%; }
       .main { padding: 12px; }
