@@ -1783,6 +1783,8 @@
               versions: Array.isArray(chat.versions) ? chat.versions : [],
               currentSourceLabel: chat.currentSourceLabel || null,
               contextMessage: chat.contextMessage || null,
+              positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
+              docked: Boolean(chat.docked),
               isPrivate: true
             }));
             return;
@@ -1801,6 +1803,8 @@
             versions: Array.isArray(chat.versions) ? chat.versions : [],
             currentSourceLabel: chat.currentSourceLabel || null,
             contextMessage: chat.contextMessage || null,
+            positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
+            docked: Boolean(chat.docked),
             isPrivate: true
           }));
           return;
@@ -1815,6 +1819,8 @@
           versions: Array.isArray(chat.versions) ? chat.versions : [],
           currentSourceLabel: chat.currentSourceLabel || null,
           contextMessage: chat.contextMessage || null,
+          positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
+          docked: Boolean(chat.docked),
           isPrivate: false
         }));
       } catch (error) {}
@@ -1843,7 +1849,10 @@
 
     function saveChatOrder() {
       try {
-        localStorage.setItem(CHAT_ORDER_STORAGE, JSON.stringify(chatState.map(item => item.name)));
+        localStorage.setItem(CHAT_ORDER_STORAGE, JSON.stringify(chatState.map((item, index) => ({
+          name: item.name,
+          positionIndex: index
+        }))));
       } catch (error) {}
     }
 
@@ -1855,6 +1864,12 @@
       } catch (error) {
         return [];
       }
+    }
+
+    function syncChatPositions() {
+      chatState.forEach((chat, index) => {
+        chat.positionIndex = index;
+      });
     }
 
     function clearAllChatsFromStorage() {
@@ -2345,26 +2360,10 @@
 
     function renderMinimizedMenu() {
       const minimized = chatState.filter(chat => chat.minimized && !chat.deleted);
-      const docked = chatState.filter(chat => chat.docked && !chat.deleted);
       minimizedCount.textContent = minimized.length;
       minimizedMenu.innerHTML = '';
       sidebarDropZone.innerHTML = '';
-
-      if (!docked.length) {
-        sidebarDropZone.innerHTML = '<div class="empty-state">Arrastra un chat ac&aacute;</div>';
-      }
-
-      docked.forEach(chat => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'sidebar-docked-item';
-        button.textContent = chat.name;
-        button.addEventListener('click', (event) => {
-          event.stopPropagation();
-          showChatInWorkspace(chat.id);
-        });
-        sidebarDockedChats.appendChild(button);
-      });
+      sidebarDropZone.innerHTML = '<div class="empty-state">Arrastra un chat ac&aacute;</div>';
 
     }
 
@@ -2791,7 +2790,9 @@
           moved.docked = false;
           moved.minimized = false;
           chatState.splice(chatState.indexOf(chat), 0, moved);
+          syncChatPositions();
           saveChatOrder();
+          chatState.forEach(saveChatToStorage);
           renderChats();
           requestAnimationFrame(() => animateReorder(prevRects));
         });
@@ -3419,6 +3420,7 @@
         item.focused = item.id === id;
         item.flashHighlight = item.id === id;
       });
+      saveChatToStorage(chat);
       renderChats();
     }
 
@@ -3457,6 +3459,7 @@
         item.focused = item.id === id;
         item.flashHighlight = item.id === id;
       });
+      syncChatPositions();
       saveChatOrder();
       renderChats();
     }
@@ -3494,6 +3497,7 @@
         consoleShowDelete: false,
         temporalMode: false
       }));
+      syncChatPositions();
       chatState.forEach(saveChatToStorage);
       saveChatOrder();
       renderChats();
@@ -3505,11 +3509,13 @@
         createChats();
         return;
       }
+      const dockedSaved = saved.filter(item => item.docked);
+      saved.forEach(item => { item.docked = false; });
       const order = loadChatOrder();
       if (order.length) {
         saved.sort((a, b) => {
-          const aPos = order.indexOf(a.name);
-          const bPos = order.indexOf(b.name);
+          const aPos = Number.isFinite(a.positionIndex) ? a.positionIndex : order.findIndex(item => item.name === a.name);
+          const bPos = Number.isFinite(b.positionIndex) ? b.positionIndex : order.findIndex(item => item.name === b.name);
           return (aPos === -1 ? order.length : aPos) - (bPos === -1 ? order.length : bPos);
         });
       }
@@ -3540,11 +3546,17 @@
         viewingVersionId: null,
         currentSourceLabel: typeof item.currentSourceLabel === 'string' ? item.currentSourceLabel : null,
         contextMessage: item.contextMessage || null,
+        positionIndex: Number.isFinite(item.positionIndex) ? item.positionIndex : i,
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
         temporalMode: false
       }));
+      dockedSaved.forEach(item => {
+        const chat = chatState.find(entry => entry.name === item.name);
+        if (chat) chat.docked = true;
+      });
+      syncChatPositions();
       renderChats();
     }
 
@@ -4077,6 +4089,7 @@
       chat.docked = true;
       chat.maximized = false;
       chat.focused = false;
+      saveChatToStorage(chat);
       renderChats();
     });
 
