@@ -582,10 +582,10 @@
       height: auto;
       padding: 8px 12px;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 8px;
       position: relative;
       z-index: 40;
       overflow: visible;
@@ -1428,17 +1428,22 @@
         min-width: 160px;
       }
       .chat-grid, .chat-grid.cols-1, .chat-grid.cols-2, .chat-grid.cols-3 { grid-template-columns: 1fr; }
-      .panel-top { height: auto; min-height: 44px; flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
-      .panel-title { flex: 1 1 100%; }
+      .panel-top { height: auto; min-height: 44px; gap: 8px; padding: 10px 12px; }
+      .panel-title { flex: 1 1 auto; }
       .panel-actions { margin-left: 0; width: 100%; }
     }
     @media (max-width: 640px) {
       .panel-top {
         padding: 10px;
-        align-items: flex-start;
       }
       .panel-title strong {
         white-space: normal;
+      }
+      .panel-title-row {
+        align-items: flex-start;
+      }
+      .panel-main-actions {
+        margin-left: auto;
       }
       .panel-actions {
         width: 100%;
