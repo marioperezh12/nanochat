@@ -503,6 +503,9 @@
       max-height: none;
       isolation: isolate;
     }
+    .chat-panel.docked {
+      height: 400px;
+    }
     .privacy-overlay {
       position: absolute;
       top: 44px;
@@ -601,6 +604,44 @@
       overflow: hidden;
       cursor: text;
     }
+    .panel-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      min-width: 0;
+      flex: 1 1 100%;
+    }
+    .panel-main-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: none;
+      margin-left: auto;
+    }
+    .panel-main-actions button {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(159, 229, 255, 0.16);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      flex: none;
+    }
+    .panel-main-actions button:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(159, 229, 255, 0.26);
+    }
+    .panel-main-actions .min-btn { color: var(--muted); }
+    .panel-main-actions .max-btn { color: #41d6c7; }
+    .panel-main-actions .close-btn { color: #ff8a8a; }
     .panel-dot {
       width: 8px;
       height: 8px;
@@ -639,8 +680,9 @@
       gap: 6px;
       flex: 0 1 auto;
       flex-wrap: wrap;
-      justify-content: flex-end;
-      margin-left: auto;
+      justify-content: flex-start;
+      width: 100%;
+      margin-left: 0;
       max-width: 100%;
       position: relative;
       z-index: 120;
@@ -1393,11 +1435,15 @@
     @media (max-width: 640px) {
       .panel-top {
         padding: 10px;
+        align-items: flex-start;
       }
       .panel-title strong {
         white-space: normal;
       }
       .panel-actions {
+        width: 100%;
+        margin-left: 0;
+        justify-content: flex-start;
         gap: 4px;
       }
       .chat-title-input {
@@ -1450,7 +1496,7 @@
             <div class="user-dropdown-name" id="userDropdownName">Usuario</div>
             <div class="user-dropdown-email" id="userDropdownEmail"></div>
             <div class="user-dropdown-divider"></div>
-            <button type="button" class="logout-item" id="logoutBtn">Cerrar sesión</button>
+            <button type="button" class="logout-item" id="logoutBtn">Cerrar sesiï¿½n</button>
           </div>
         </div>
       </div>
@@ -2426,6 +2472,7 @@
         panel.className = 'chat-panel';
         panel.setAttribute('data-chat-id', chat.id);
         if (chat.maximized) panel.classList.add('maximized');
+        if (chat.docked) panel.classList.add('docked');
         if (chat.focused) panel.classList.add('focused');
         if (chat.blinked) panel.classList.add('blinked');
         if (chat.closing) panel.classList.add('closing');
@@ -2604,9 +2651,16 @@
 
         panel.innerHTML = `
           <div class="panel-top">
-            <div class="panel-title">
-              <div class="panel-dot"></div>
-              <strong class="chat-title-text">${chat.name}</strong>
+            <div class="panel-title-row">
+              <div class="panel-title">
+                <div class="panel-dot"></div>
+                <strong class="chat-title-text">${chat.name}</strong>
+              </div>
+              <div class="panel-main-actions">
+                <button type="button" class="min-btn" title="Minimizar">&#8722;</button>
+                <button type="button" class="max-btn" title="Maximizar">&#9633;</button>
+                <button type="button" class="close-btn" title="Cerrar">&#215;</button>
+              </div>
             </div>
             <div class="panel-actions">
               <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">${chat.favorite ? '&#9733;' : '&#9734;'}</button>
@@ -2638,9 +2692,6 @@
                 <button type="button" class="console-toggle" title="Consola de comandos"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button>
                 <div class="console-menu">${consoleMenuHtml}</div>
               </div>
-              <button type="button" class="min-btn" title="Minimizar">&#8722;</button>
-              <button type="button" class="max-btn" title="Maximizar">&#9633;</button>
-              <button type="button" class="close-btn" title="Cerrar">&#215;</button>
             </div>
           </div>
           <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
