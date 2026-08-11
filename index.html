@@ -758,8 +758,40 @@
       min-height: 1em;
     }
 
-    .key-toggle.active {
+    .panel-actions .fav-toggle,
+    .panel-actions .key-toggle,
+    .panel-actions .temporal-toggle {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(159, 229, 255, 0.16);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      flex: none;
+      cursor: pointer;
+    }
+    .panel-actions .fav-toggle:hover,
+    .panel-actions .key-toggle:hover,
+    .panel-actions .temporal-toggle:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(159, 229, 255, 0.26);
+      color: var(--text);
+    }
+    .panel-actions .fav-toggle.active,
+    .panel-actions .key-toggle.active {
       color: #ffd84d;
+      background: rgba(255, 216, 77, 0.12);
+      border-color: rgba(255, 216, 77, 0.36);
+    }
+    .panel-actions .temporal-toggle.active {
+      color: #41d6c7;
+      background: rgba(65, 214, 199, 0.12);
+      border-color: rgba(65, 214, 199, 0.36);
     }
 
     .chat-panel.maximized {
@@ -1404,10 +1436,6 @@
       font-size: 0.68rem;
       color: var(--muted);
       margin-top: 1px;
-    }
-
-    .temporal-toggle.active {
-      color: #ffd84d;
     }
 
     .version-list {
@@ -2470,7 +2498,6 @@
     }
 
     async function saveChatToStorage(chat) {
-      if (chat.temporalMode) return;
       try {
         if (chat.isPrivate) {
           if (chat._encryptedMessages && !chat.unlocked) {
@@ -2489,6 +2516,7 @@
               contextMessage: chat.contextMessage || null,
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
+              temporalMode: Boolean(chat.temporalMode),
               isPrivate: true
             }));
             return;
@@ -2509,6 +2537,7 @@
             contextMessage: chat.contextMessage || null,
             positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
             docked: Boolean(chat.docked),
+            temporalMode: Boolean(chat.temporalMode),
             isPrivate: true
           }));
           return;
@@ -2525,6 +2554,7 @@
           contextMessage: chat.contextMessage || null,
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
+          temporalMode: Boolean(chat.temporalMode),
           isPrivate: false
         }));
       } catch (error) { }
@@ -3376,9 +3406,10 @@
               </div>
             </div>
             <div class="panel-actions">
-              <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">${chat.favorite ? '&#9733;' : '&#9734;'}</button>
-              <button type="button" class="key-toggle${chat.isPrivate ? ' active' : ''}" title="${chat.isPrivate ? 'Chat privado' : 'Proteger chat con contraseña'}">&#128273;</button>
-              <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#128337;</button>              <div class="panel-pins">
+              <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">&#9733;</button>
+              <button type="button" class="key-toggle${chat.isPrivate ? ' active' : ''}" title="${chat.isPrivate ? 'Chat privado' : 'Proteger chat con contraseña'}">&#128274;</button>
+              <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#9202;</button>
+              <div class="panel-pins">
                 <button type="button" class="pins-toggle" title="Mensajes anclados">&#128204;</button>
                 <div class="pins-menu">${pinsMenuHtml}</div>
               </div>
@@ -4009,6 +4040,7 @@
         temporalToggle.addEventListener('click', (event) => {
           event.stopPropagation();
           chat.temporalMode = !chat.temporalMode;
+          saveChatToStorage(chat);
           renderChats();
         });
 
@@ -4254,7 +4286,7 @@
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
-        temporalMode: false
+        temporalMode: Boolean(item.temporalMode)
       }));
       dockedSaved.forEach(item => {
         const chat = chatState.find(entry => entry.name === item.name);
