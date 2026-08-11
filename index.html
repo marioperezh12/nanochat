@@ -1183,6 +1183,25 @@
       box-shadow: 0 0 0 1px rgba(255, 216, 77, 0.35);
     }
 
+    .message.expired {
+      background: rgba(120, 128, 136, 0.10);
+      border-color: rgba(120, 128, 136, 0.28);
+      color: #9ea8b0;
+      opacity: 0.92;
+    }
+
+    .message.expired .message-content,
+    .message.expired .message-content *,
+    .message.expired .message-actions,
+    .message.expired .message-actions button {
+      color: inherit;
+    }
+
+    .message.expired .message-actions {
+      background: rgba(120, 128, 136, 0.16);
+      border-color: rgba(120, 128, 136, 0.22);
+    }
+
     .msg-pin.active {
       color: #ffd84d;
     }
@@ -2600,6 +2619,10 @@
       }
     }
 
+    function isTemporalMessageExpired(message) {
+      return Boolean(message && message.expiresAt && message.expiresAt <= Date.now());
+    }
+
     function syncChatPositions() {
       chatState.forEach((chat, index) => {
         chat.positionIndex = index;
@@ -2876,7 +2899,7 @@
 
     function buildFullConversationText(messages) {
       return messages
-        .filter(message => !message.typing)
+        .filter(message => !message.typing && !isTemporalMessageExpired(message))
         .map(message => {
           const raw = (message.rawText || message.content || '').trim();
           const label = message.role === 'user' ? 'Usuario' : 'Asistente';
@@ -2893,14 +2916,14 @@
 
       let transcript;
       if (scope === 'general') {
-        const hasMessages = activeMessages.some(message => !message.typing);
+        const hasMessages = activeMessages.some(message => !message.typing && !isTemporalMessageExpired(message));
         if (!hasMessages) {
           window.alert('No hay mensajes en la conversación para resumir.');
           return;
         }
         transcript = buildFullConversationText(activeMessages);
       } else {
-        const hasPinned = activePinnedIndices.some(idx => activeMessages[idx] && !activeMessages[idx].typing);
+        const hasPinned = activePinnedIndices.some(idx => activeMessages[idx] && !activeMessages[idx].typing && !isTemporalMessageExpired(activeMessages[idx]));
         if (!hasPinned) {
           window.alert('No hay mensajes anclados para resumir.');
           return;
@@ -3254,6 +3277,7 @@
             if (message.typing) {
               return '<div class="message assistant typing" data-msg-index="' + i + '"><span class="typing-dots"><span></span><span></span><span></span></span></div>';
             }
+            const isExpired = isTemporalMessageExpired(message);
             if (message.isSummary) {
               const plainSummary = (message.rawText || message.content || '').trim();
               const isExpanded = chat.expandedIndices.includes(i);
@@ -3265,7 +3289,7 @@
               const summaryReplicateBtn = '<button type="button" class="msg-replicate" data-msg-index="' + i + '" title="Reutilizar en caja de mensaje">&#128229;</button>';
               const summaryDeleteBtn = isReadOnly ? '' : '<button type="button" class="msg-delete" data-msg-index="' + i + '" title="Eliminar">&#128465;</button>';
               const summaryActions = '<div class="message-actions">' + summaryReplicateBtn + summaryDeleteBtn + '</div>';
-              return '<div class="message summary-message" data-msg-index="' + i + '">' + body + summaryActions + '</div>';
+              return '<div class="message summary-message' + (isExpired ? ' expired' : '') + '" data-msg-index="' + i + '">' + body + summaryActions + '</div>';
             }
             const cls = message.role === 'user' ? 'user' : 'assistant';
             const isPinned = activePinnedIndices.includes(i);
@@ -3289,12 +3313,12 @@
                 ? '<div class="message-actions"><button type="button" class="msg-edit" data-msg-index="' + i + '" title="Editar">&#9998;</button><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replicateBtn + replyBtn + deleteBtn + '</div>'
                 : '<div class="message-actions"><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replicateBtn + replyBtn + deleteBtn + '</div>';
             }
-            return '<div class=\"message ' + cls + (isPinned ? ' pinned' : '') + '\" data-msg-index=\"' + i + '\">' + body + actions + '</div>';
+            return '<div class=\"message ' + cls + (isPinned ? ' pinned' : '') + (isExpired ? ' expired' : '') + '\" data-msg-index=\"' + i + '\">' + body + actions + '</div>';
           }).join('')
           : '';
 
         const temporalNoticeHtml = (chat.temporalMode && !isReadOnly && !isPickerMode)
-          ? '<div class="message temporal-notice">&#128337; Los mensajes de este chat son temporales: se eliminarán automáticamente 1 minuto después de enviarse.</div>'
+          ? '<div class="message temporal-notice">&#128337; Los mensajes de este chat son temporales, considere aquí solo mensajes que no necesiten contexto ni memoria</div>'
           : '';
 
         let contextMessageHtml = '';
@@ -3354,11 +3378,12 @@
         }
 
         const consoleMenuHtml = ''
+        + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
-          + '<button type="button" class="console-item" data-command="eliminar">/eliminar<span class="console-item-desc">Lista las versiones para eliminarlas permanentemente</span></button>'
-          + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>';
+          + '<button type="button" class="console-item" data-command="eliminar">/eliminar<span class="console-item-desc">Lista las versiones para eliminarlas permanentemente</span></button>';
+          
 
         let versionListHtml = '';
         if (isVersionPicker) {
@@ -4552,7 +4577,7 @@
 
       try {
         const engineMessages = chat.messages
-          .filter(message => !message.typing)
+          .filter(message => !message.typing && !isTemporalMessageExpired(message))
           .map(message => ({ role: message.role, content: message.content }));
         if (chat.contextMessage && chat.contextMessage.content) {
           engineMessages.unshift({ role: 'user', content: '[Contexto]: ' + chat.contextMessage.content });
@@ -4956,29 +4981,13 @@
     });
 
     function pruneExpiredTemporalMessages() {
-      const now = Date.now();
-      let changed = false;
       chatState.forEach(chat => {
-        if (!chat.messages.some(message => message.expiresAt && message.expiresAt <= now)) return;
-        const keptIndices = [];
-        chat.messages = chat.messages.filter((message, idx) => {
-          const expired = message.expiresAt && message.expiresAt <= now;
-          const isPinned = chat.pinnedIndices.includes(idx);
-          const keep = !expired || isPinned;
-          if (keep) keptIndices.push(idx);
-          return keep;
+        chat.messages.forEach(message => {
+          if (message && message.expiresAt && message.expiresAt <= Date.now()) {
+            message._expired = true;
+          }
         });
-        const remap = idx => {
-          const pos = keptIndices.indexOf(idx);
-          return pos === -1 ? null : pos;
-        };
-        chat.pinnedIndices = chat.pinnedIndices.map(remap).filter(idx => idx !== null);
-        chat.expandedIndices = chat.expandedIndices.map(remap).filter(idx => idx !== null);
-        if (chat.editingIndex != null) chat.editingIndex = remap(chat.editingIndex);
-        if (chat.replyingToIndex != null) chat.replyingToIndex = remap(chat.replyingToIndex);
-        changed = true;
       });
-      if (changed) renderChats();
     }
     setInterval(pruneExpiredTemporalMessages, 1000);
 
