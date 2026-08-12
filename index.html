@@ -2756,8 +2756,10 @@
     const panzoomResetBtn = document.getElementById('panzoomResetBtn');
     const panzoomZoomInBtn = document.getElementById('panzoomZoomInBtn');
     const workspaceThreeMaxBtn = document.getElementById('workspaceThreeMaxBtn');
+    let workspaceThreePanzoom = null;
     let workspaceThreeJsPlumb = null;
     let workspaceThreeConnection = null;
+    const workspaceThreeConnections = [];
     const workspaceThreeMiniChats = [];
     let workspaceThreeMaximized = false;
     const newChatMenuItem = document.getElementById('newChatMenuItem');
@@ -3261,15 +3263,38 @@
     }
 
     function refreshWorkspaceThreeConnection() {
-      if (workspaceThreeCanvas) {
-        const hasClosedPanels = workspaceThreeMiniChats.some(item => item.closed);
-        workspaceThreeCanvas.classList.toggle('connection-hidden', hasClosedPanels);
-      }
       if (!workspaceThreeJsPlumb) return;
-      [workspaceThreeChat, workspaceThreeChatTwo].forEach(chatEl => {
-        if (chatEl) workspaceThreeJsPlumb.revalidate(chatEl);
+      workspaceThreeMiniChats.forEach(state => {
+        if (state.element) workspaceThreeJsPlumb.revalidate(state.element);
       });
       workspaceThreeJsPlumb.repaintEverything();
+    }
+
+    function disconnectWorkspaceThreeState(state) {
+      if (!state?.connections?.length) return;
+      const relatedConnections = state.connections.slice();
+      state.connections = [];
+      relatedConnections.forEach(connection => {
+        workspaceThreeMiniChats.forEach(item => {
+          if (item?.connections) {
+            item.connections = item.connections.filter(entry => entry !== connection);
+          }
+        });
+        const idx = workspaceThreeConnections.indexOf(connection);
+        if (idx !== -1) workspaceThreeConnections.splice(idx, 1);
+        if (workspaceThreeJsPlumb?.deleteConnection) {
+          workspaceThreeJsPlumb.deleteConnection(connection);
+        } else if (connection?.setVisible) {
+          connection.setVisible(false);
+        }
+      });
+      refreshWorkspaceThreeConnection();
+    }
+
+    function formatWorkspaceThreeContextHtml(rawText) {
+      const plain = (rawText || '').trim();
+      if (!plain) return '';
+      return formatMarkdown(plain);
     }
 
     function getWorkspaceThreeMessagesSnapshot(state) {
@@ -3395,6 +3420,26 @@
       });
     }
 
+    function renderWorkspaceThreeContextMessage(state) {
+      const existingContext = state.body.querySelector('.message.context-message');
+      if (!state.contextMessage || !state.contextMessage.rawText) {
+        if (existingContext) existingContext.remove();
+        return;
+      }
+      const contextPlain = (state.contextMessage.rawText || '').trim();
+      const contextPreview = contextPlain.length > 100 ? contextPlain.slice(0, 100) + '...' : contextPlain;
+      const contextDisplay = state.contextMessage.display || formatWorkspaceThreeContextHtml(contextPlain);
+      const contextHtml = '<div class="message-content"><span class="context-preview">' + escapeHtml(contextPreview) + '</span><span class="context-full">' + contextDisplay + '</span></div>';
+      if (existingContext) {
+        existingContext.innerHTML = contextHtml;
+        return;
+      }
+      const contextEl = document.createElement('div');
+      contextEl.className = 'message context-message';
+      contextEl.innerHTML = contextHtml;
+      state.body.insertBefore(contextEl, state.body.firstChild);
+    }
+
     function renderWorkspaceThreeMiniChat(state) {
       state.element.classList.toggle('minimized', state.minimized);
       state.element.classList.toggle('maximized', state.maximized);
@@ -3423,6 +3468,7 @@
         existingOverlay.remove();
       }
 
+      renderWorkspaceThreeContextMessage(state);
       refreshWorkspaceThreeHistoryMenu(state);
       refreshWorkspaceThreeConnection();
     }
@@ -3432,13 +3478,15 @@
       const settings = options || {};
       const bubble = settings.existingEl || document.createElement('div');
       bubble.className = 'message ' + role + ' workspace-three-msg';
-      bubble.textContent = text;
+      if (settings.htmlContent) bubble.innerHTML = settings.htmlContent;
+      else bubble.textContent = text;
       if (!settings.existingEl) state.body.appendChild(bubble);
       const message = {
         id: state.nextMessageId++,
         role,
         text,
         el: bubble,
+        display: settings.htmlContent || null,
         expiresAt: settings.expiresAt || null,
         timerId: null
       };
@@ -3486,6 +3534,8 @@
         body: config.body,
         input: cleanInput,
         sendBtn: cleanSendBtn,
+        titleStrong: config.element.querySelector('.panel-title strong'),
+        titleSpan: config.element.querySelector('.panel-title span'),
         compose: config.element.querySelector('.workspace-three-chat-compose'),
         minBtn: config.element.querySelector('.min-btn'),
         maxBtn: config.element.querySelector('.max-btn'),
@@ -3513,10 +3563,16 @@
         minimized: false,
         maximized: false,
         closed: false,
+        contextMessage: config.contextMessage || null,
+        connections: [],
         searchMatchIds: [],
         searchCurrent: -1,
         searchHighlightedEl: null
       };
+
+      if (config.title) state.titleStrong.textContent = config.title;
+      if (config.subtitle) state.titleSpan.textContent = config.subtitle;
+      if (config.inputPlaceholder) state.input.placeholder = config.inputPlaceholder;
 
       state.body.querySelectorAll('.workspace-three-msg').forEach(messageEl => {
         const role = messageEl.classList.contains('user') ? 'user' : 'assistant';
@@ -3546,6 +3602,7 @@
       });
       state.closeBtn?.addEventListener('click', (event) => {
         event.stopPropagation();
+        disconnectWorkspaceThreeState(state);
         state.closed = true;
         state.minimized = false;
         state.maximized = false;
@@ -3657,6 +3714,13 @@
         }
         state.shareWrap.classList.remove('open');
       });
+      state.body.addEventListener('click', (event) => {
+        const contextMessageEl = event.target.closest('.message.context-message');
+        if (contextMessageEl && !event.target.closest('a')) {
+          event.stopPropagation();
+          contextMessageEl.classList.toggle('expanded');
+        }
+      });
       state.input.addEventListener('pointerdown', (event) => event.stopPropagation());
       state.input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
@@ -3697,6 +3761,105 @@
         input: workspaceThreeChatInputTwo,
         sendBtn: workspaceThreeChatSendTwo
       });
+    }
+
+    function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
+      return '<div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">'
+        + '<div class="panel-title-row">'
+        + '<div class="panel-title">'
+        + '<div class="panel-dot"></div>'
+        + '<strong>' + escapeHtml(title) + '</strong>'
+        + '<span>' + escapeHtml(subtitle) + '</span>'
+        + '</div>'
+        + '<div class="panel-main-actions">'
+        + '<button type="button" class="min-btn panzoom-exclude" title="Minimizar">&#8722;</button>'
+        + '<button type="button" class="max-btn panzoom-exclude" title="Maximizar">&#9633;</button>'
+        + '<button type="button" class="close-btn panzoom-exclude" title="Cerrar">&#215;</button>'
+        + '</div></div>'
+        + '<div class="panel-actions">'
+        + '<button type="button" class="fav-toggle panzoom-exclude" title="Marcar como favorito">&#9733;</button>'
+        + '<button type="button" class="key-toggle panzoom-exclude" title="Proteger chat con contraseña">&#128274;</button>'
+        + '<button type="button" class="temporal-toggle panzoom-exclude" title="Activar modo temporal">&#9202;</button>'
+        + '<div class="panel-history"><button type="button" class="history-toggle panzoom-exclude" title="Historial de mensajes enviados">&#9776;</button><div class="history-menu"></div></div>'
+        + '<div class="panel-search"><button type="button" class="search-toggle panzoom-exclude" title="Buscar">&#128269;</button><div class="search-bar"><input type="text" class="search-input panzoom-exclude" placeholder="Buscar en el chat..." /><button type="button" class="search-prev panzoom-exclude" title="Anterior">&#8593;</button><button type="button" class="search-next panzoom-exclude" title="Siguiente">&#8595;</button></div></div>'
+        + '<div class="panel-share"><button type="button" class="share-toggle panzoom-exclude" title="Compartir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button><div class="share-menu"><button type="button" class="share-item panzoom-exclude" data-share="all">Compartir todo el chat</button></div></div>'
+        + '</div></div>'
+        + '<div class="panel-body workspace-three-chat-body panzoom-exclude" id="' + chatId + '-body"></div>'
+        + '<div class="panel-input workspace-three-chat-compose">'
+        + '<textarea class="chat-message-input panzoom-exclude" id="' + chatId + '-input" rows="2" placeholder="' + escapeHtml(placeholder) + '"></textarea>'
+        + '<button class="panzoom-exclude" type="button" id="' + chatId + '-send">Enviar</button>'
+        + '</div>';
+    }
+
+    function getWorkspaceThreeBranchOrigin(stepCount) {
+      const visibleChats = workspaceThreeMiniChats.filter(item => !item.closed);
+      const maxY = visibleChats.reduce((max, item) => {
+        const y = Number(item.element?.dataset?.y || 140);
+        return Math.max(max, y);
+      }, 140);
+      const clusterSpacing = Math.max(260, stepCount * 56);
+      return {
+        x: 180,
+        y: maxY + clusterSpacing
+      };
+    }
+
+    function createWorkspaceThreeMiniChatNode(options) {
+      if (!workspaceThreeCanvas) return null;
+      const suffix = Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const chatId = 'workspaceThreeDynamic-' + suffix;
+      const article = document.createElement('article');
+      article.className = 'workspace-three-chat-panel workspace-three-chat';
+      article.id = chatId;
+      article.dataset.x = String(options.x || 180);
+      article.dataset.y = String(options.y || 140);
+      article.innerHTML = buildWorkspaceThreeChatMarkup(
+        chatId,
+        options.title || 'Workspace Three',
+        options.subtitle || 'Rama',
+        options.inputPlaceholder || 'Escribe un mensaje...'
+      );
+      workspaceThreeCanvas.appendChild(article);
+
+      const state = initWorkspaceThreeMiniChat({
+        id: options.id || chatId,
+        name: options.name || options.title || 'Workspace Three',
+        title: options.title || 'Workspace Three',
+        subtitle: options.subtitle || 'Rama',
+        assistantPrefix: options.assistantPrefix || ((options.title || 'Workspace Three') + ' recibió: '),
+        element: article,
+        body: article.querySelector('.workspace-three-chat-body'),
+        input: article.querySelector('.chat-message-input'),
+        sendBtn: article.querySelector('button[id$="-send"]'),
+        contextMessage: options.contextMessage || null,
+        inputPlaceholder: options.inputPlaceholder || 'Escribe un mensaje...'
+      });
+      if (!state) return null;
+
+      wireWorkspaceThreeChatDrag(article);
+      setWorkspaceThreeChatPosition(article, Number(article.dataset.x), Number(article.dataset.y));
+
+      (options.seedMessages || []).forEach(seed => {
+        addWorkspaceThreeMessage(state, seed.role || 'assistant', seed.text || '', {
+          htmlContent: seed.htmlContent || null
+        });
+      });
+      renderWorkspaceThreeMiniChat(state);
+      return state;
+    }
+
+    function connectWorkspaceThreeNodes(sourceState, targetState) {
+      if (!workspaceThreeJsPlumb || !sourceState?.element || !targetState?.element) return null;
+      const connection = workspaceThreeJsPlumb.connect({
+        source: sourceState.element,
+        target: targetState.element,
+        anchors: [['RightMiddle'], ['LeftMiddle']]
+      });
+      workspaceThreeConnections.push(connection);
+      sourceState.connections.push(connection);
+      targetState.connections.push(connection);
+      refreshWorkspaceThreeConnection();
+      return connection;
     }
 
     function generateVersionId() {
@@ -3744,6 +3907,204 @@
           return label + ': ' + raw;
         })
         .join('\n\n');
+    }
+
+    function setTemporaryChatStatus(chat, text, timeoutMs = 3200) {
+      if (!chat) return;
+      chat.statusMessage = text;
+      renderChats();
+      if (chat._statusTimer) clearTimeout(chat._statusTimer);
+      chat._statusTimer = setTimeout(() => {
+        chat.statusMessage = null;
+        chat._statusTimer = null;
+        renderChats();
+      }, timeoutMs);
+    }
+
+    function extractJsonObjectFromText(text) {
+      if (!text) return null;
+      const fenced = text.match(/```json\s*([\s\S]*?)```/i) || text.match(/```\s*([\s\S]*?)```/i);
+      const candidate = fenced ? fenced[1].trim() : text.trim();
+      const start = candidate.indexOf('{');
+      const end = candidate.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) return null;
+      const raw = candidate.slice(start, end + 1);
+      try {
+        return JSON.parse(raw);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function extractOrderedStepsFromText(text) {
+      if (!text) return [];
+      const lines = text.split(/\r?\n/);
+      const steps = [];
+      let current = null;
+      let inCodeBlock = false;
+
+      lines.forEach(line => {
+        const raw = line.replace(/\t/g, '  ');
+        const trimmed = raw.trim();
+        if (!trimmed) {
+          if (current && current.length && current[current.length - 1] !== '') current.push('');
+          return;
+        }
+        if (/^```/.test(trimmed)) {
+          inCodeBlock = !inCodeBlock;
+          if (current) current.push(trimmed);
+          return;
+        }
+        const stepMatch = trimmed.match(/^(\d+\.\s+|[-*]\s+)(.+)$/);
+        if (!inCodeBlock && stepMatch) {
+          if (current) steps.push(current.join('\n').trim());
+          current = [stepMatch[2]];
+          return;
+        }
+        if (current) {
+          current.push(trimmed);
+        }
+      });
+      if (current) steps.push(current.join('\n').trim());
+      return steps.filter(Boolean);
+    }
+
+    function normalizeBranchSteps(stepList, fallbackText) {
+      const rawSteps = Array.isArray(stepList) ? stepList : [];
+      const cleaned = rawSteps
+        .map(step => String(step || '').trim())
+        .filter(Boolean);
+      if (cleaned.length) return cleaned;
+      return extractOrderedStepsFromText(fallbackText);
+    }
+
+    async function callSelectedEngine(messages, activeKey) {
+      if (selectedEngine === 'gemini') return callGemini(messages, activeKey);
+      if (selectedEngine === 'groq') return callGroq(messages, activeKey);
+      if (selectedEngine === 'deepseek') return callDeepSeek(messages, activeKey);
+      return callOpenAI(messages, activeKey);
+    }
+
+    async function buildBranchPlanFromChat(chat) {
+      const activeMessages = chat.messages.filter(message => !message.typing && !isTemporalMessageExpired(message));
+      const lastAssistantMessage = [...activeMessages].reverse().find(message => message.role === 'assistant');
+      if (!lastAssistantMessage) {
+        throw new Error('Necesito un último mensaje del asistente con pasos para crear las ramas.');
+      }
+
+      const transcript = buildFullConversationText(activeMessages);
+      const lastAssistantText = (lastAssistantMessage.rawText || lastAssistantMessage.content || '').trim();
+      const contextPrefix = chat.contextMessage?.content ? ('Contexto fijo del chat:\n' + chat.contextMessage.content + '\n\n') : '';
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        throw new Error('Conecta tu API key de ' + engineName + ' para usar /ramas.');
+      }
+
+      const branchInstruction = 'Analiza esta conversación y el último mensaje del asistente. '
+        + 'Responde SOLO con JSON válido, sin markdown, con esta forma exacta: '
+        + '{"summary":"resumen breve y operativo del chat, enfocado en ejecutar el último mensaje","steps":["paso 1","paso 2"]}. '
+        + 'Reglas: el summary debe condensar el contexto útil de toda la conversación. '
+        + 'La lista steps debe salir del último mensaje del asistente, en el mismo orden, normalizando redacción solo si ayuda. '
+        + 'Si un paso incluye comandos o subinstrucciones, mantenlos dentro del mismo string usando saltos de línea. '
+        + 'No inventes pasos extra si no están implícitos de forma clara en el último mensaje.';
+
+      const reply = await callSelectedEngine([
+        {
+          role: 'user',
+          content: branchInstruction
+            + '\n\n'
+            + contextPrefix
+            + 'Conversación completa:\n'
+            + transcript
+            + '\n\nÚltimo mensaje del asistente:\n'
+            + lastAssistantText
+        }
+      ], activeKey);
+
+      const parsed = extractJsonObjectFromText(reply) || {};
+      const summary = String(parsed.summary || '').trim();
+      const steps = normalizeBranchSteps(parsed.steps, lastAssistantText);
+      if (!steps.length) {
+        throw new Error('No pude extraer pasos accionables del último mensaje del asistente.');
+      }
+      return {
+        summary: summary || 'Resumen operativo no disponible.',
+        steps,
+        rawModelReply: reply,
+        lastAssistantText
+      };
+    }
+
+    async function handleRamasCommand(chat) {
+      const plan = await buildBranchPlanFromChat(chat);
+      const branchOrigin = getWorkspaceThreeBranchOrigin(plan.steps.length);
+      const childSpacing = 220;
+      const childX = branchOrigin.x + 700;
+      const totalHeight = Math.max(0, (plan.steps.length - 1) * childSpacing);
+      const parentY = branchOrigin.y + (totalHeight / 2);
+      const stepsText = plan.steps.map((step, index) => (index + 1) + '. ' + step).join('\n\n');
+      const parentContext = 'Resumen del chat:\n'
+        + plan.summary
+        + '\n\nPasos recomendados del último mensaje:\n'
+        + stepsText;
+
+      const parentState = createWorkspaceThreeMiniChatNode({
+        id: 'workspace-three-branch-parent-' + Date.now(),
+        name: 'Ramas de ' + chat.name,
+        title: 'Ramas de ' + chat.name,
+        subtitle: 'Contexto base',
+        x: branchOrigin.x,
+        y: parentY,
+        assistantPrefix: 'Nodo padre recibió: ',
+        inputPlaceholder: 'Escribe para expandir esta rama...',
+        contextMessage: {
+          rawText: parentContext,
+          display: formatWorkspaceThreeContextHtml(parentContext)
+        },
+        seedMessages: [
+          {
+            role: 'assistant',
+            text: 'Se generaron ' + plan.steps.length + ' ramas desde el último mensaje recomendado.',
+            htmlContent: formatMarkdown('Se generaron **' + plan.steps.length + '** ramas desde el último mensaje recomendado.')
+          }
+        ]
+      });
+      if (!parentState) {
+        throw new Error('No pude crear el nodo padre en Workspace Three.');
+      }
+
+      plan.steps.forEach((step, index) => {
+        const childContext = 'Resumen base:\n'
+          + plan.summary
+          + '\n\nPaso asignado:\n'
+          + ((index + 1) + '. ' + step);
+        const childState = createWorkspaceThreeMiniChatNode({
+          id: 'workspace-three-branch-child-' + Date.now() + '-' + index,
+          name: 'Paso ' + (index + 1),
+          title: 'Paso ' + (index + 1),
+          subtitle: chat.name,
+          x: childX,
+          y: branchOrigin.y + (index * childSpacing),
+          assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
+          inputPlaceholder: 'Desarrolla este paso...',
+          contextMessage: {
+            rawText: childContext,
+            display: formatWorkspaceThreeContextHtml(childContext)
+          },
+          seedMessages: [
+            {
+              role: 'assistant',
+              text: step,
+              htmlContent: formatMarkdown(step)
+            }
+          ]
+        });
+        if (childState) connectWorkspaceThreeNodes(parentState, childState);
+      });
+
+      setTemporaryChatStatus(chat, 'Se crearon ' + plan.steps.length + ' ramas en Workspace Three.');
+      workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     async function handleResumenCommand(chat, scope) {
@@ -3859,6 +4220,8 @@
         await handleResumenCommand(chat, 'anclados');
       } else if (command === 'resumen-general') {
         await handleResumenCommand(chat, 'general');
+      } else if (command === 'ramas') {
+        await handleRamasCommand(chat);
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
         chat.consoleShowDelete = false;
@@ -3961,6 +4324,7 @@
         maxScale: 2.5,
         excludeClass: 'panzoom-exclude'
       });
+      workspaceThreePanzoom = panzoom;
 
       if (typeof panzoom.zoom === 'function') {
         panzoom.zoom(0.4, { force: true });
@@ -4053,6 +4417,11 @@
         target: workspaceThreeChatTwo,
         anchors: [['RightMiddle'], ['LeftMiddle']]
       });
+      workspaceThreeConnections.push(workspaceThreeConnection);
+      const sourceState = workspaceThreeMiniChats.find(item => item.element === workspaceThreeChat);
+      const targetState = workspaceThreeMiniChats.find(item => item.element === workspaceThreeChatTwo);
+      if (sourceState) sourceState.connections.push(workspaceThreeConnection);
+      if (targetState) targetState.connections.push(workspaceThreeConnection);
 
       const repaint = () => refreshWorkspaceThreeConnection();
       requestAnimationFrame(repaint);
@@ -4385,6 +4754,7 @@
 
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="ramas">/ramas<span class="console-item-desc">Resume el chat y abre ramas en Workspace Three usando los pasos del último mensaje del asistente</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
@@ -5585,6 +5955,18 @@
         chat.draftText = '';
         saveChatToStorage(chat);
         renderChats();
+        return;
+      }
+
+      if (/^\/ramas\s*$/i.test(text)) {
+        input.value = '';
+        chat.draftText = '';
+        try {
+          await handleRamasCommand(chat);
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas.';
+          setTemporaryChatStatus(chat, errorText, 4200);
+        }
         return;
       }
 
