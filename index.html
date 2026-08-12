@@ -682,6 +682,10 @@
       gap: 12px;
     }
 
+    .workspace-three[hidden] {
+      display: none;
+    }
+
     .workspace-three.maximized {
       min-height: calc(100vh - var(--topbar-height) - var(--bottom-height) - 20px);
     }
@@ -811,6 +815,10 @@
     }
 
     .workspace-three-chat.closed {
+      display: none;
+    }
+
+    .workspace-three-chat.branch-filter-hidden {
       display: none;
     }
 
@@ -1159,6 +1167,45 @@
       text-overflow: ellipsis;
       min-width: 0;
       max-width: 100%;
+    }
+
+    .chat-title-tools {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      flex: none;
+    }
+
+    .hierarchy-toggle {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(159, 229, 255, 0.16);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      flex: none;
+    }
+
+    .hierarchy-toggle:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(159, 229, 255, 0.26);
+      color: var(--text);
+    }
+
+    .hierarchy-toggle.active {
+      color: #41d6c7;
+      background: rgba(65, 214, 199, 0.14);
+      border-color: rgba(65, 214, 199, 0.36);
+    }
+
+    .hierarchy-toggle svg {
+      display: block;
     }
 
     .chat-title-input {
@@ -1858,6 +1905,11 @@
       text-align: center;
     }
 
+    .status-banner.branches-banner {
+      background: rgba(65, 214, 199, 0.1);
+      border: 1px solid rgba(65, 214, 199, 0.34);
+    }
+
     .panel-body>.status-banner {
       margin: 0;
       flex: none;
@@ -2057,6 +2109,16 @@
 
     .panel-input[hidden] {
       display: none;
+    }
+
+    .panel-input.branch-locked {
+      opacity: 0.7;
+    }
+
+    .panel-input.branch-locked textarea,
+    .panel-input.branch-locked button,
+    .panel-input.branch-locked .attach-toggle {
+      cursor: not-allowed;
     }
 
     .panel-input input,
@@ -2762,6 +2824,8 @@
     const workspaceThreeConnections = [];
     const workspaceThreeMiniChats = [];
     let workspaceThreeMaximized = false;
+    let workspaceThreeVisible = false;
+    let activeWorkspaceThreeChatId = null;
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
@@ -3263,11 +3327,64 @@
     }
 
     function refreshWorkspaceThreeConnection() {
+      if (workspaceThreeSection) {
+        workspaceThreeSection.hidden = !workspaceThreeVisible;
+      }
+      workspaceThreeMiniChats.forEach(state => {
+        const isVisibleForOwner = workspaceThreeVisible && activeWorkspaceThreeChatId && state.ownerChatId === activeWorkspaceThreeChatId;
+        state.element?.classList.toggle('branch-filter-hidden', !isVisibleForOwner || state.closed);
+      });
       if (!workspaceThreeJsPlumb) return;
       workspaceThreeMiniChats.forEach(state => {
         if (state.element) workspaceThreeJsPlumb.revalidate(state.element);
       });
+      workspaceThreeConnections.forEach(connection => {
+        const sourceOwner = connection?._workspaceThreeSourceState?.ownerChatId || null;
+        const targetOwner = connection?._workspaceThreeTargetState?.ownerChatId || null;
+        const isVisible = workspaceThreeVisible
+          && activeWorkspaceThreeChatId
+          && sourceOwner === activeWorkspaceThreeChatId
+          && targetOwner === activeWorkspaceThreeChatId
+          && !connection?._workspaceThreeSourceState?.closed
+          && !connection?._workspaceThreeTargetState?.closed;
+        if (connection?.setVisible) connection.setVisible(isVisible);
+      });
       workspaceThreeJsPlumb.repaintEverything();
+    }
+
+    function setWorkspaceThreeActiveChat(chatId) {
+      if (chatId) {
+        const hasOwnedNodes = workspaceThreeMiniChats.some(state => state.ownerChatId === chatId);
+        if (!hasOwnedNodes) {
+          workspaceThreeMiniChats.forEach(state => {
+            if (!state.ownerChatId) state.ownerChatId = chatId;
+          });
+          workspaceThreeConnections.forEach(connection => {
+            if (connection?._workspaceThreeSourceState && !connection._workspaceThreeSourceState.ownerChatId) {
+              connection._workspaceThreeSourceState.ownerChatId = chatId;
+            }
+            if (connection?._workspaceThreeTargetState && !connection._workspaceThreeTargetState.ownerChatId) {
+              connection._workspaceThreeTargetState.ownerChatId = chatId;
+            }
+          });
+        }
+      }
+      activeWorkspaceThreeChatId = chatId || null;
+      workspaceThreeVisible = Boolean(activeWorkspaceThreeChatId);
+      if (!workspaceThreeVisible && workspaceThreeMaximized) {
+        setWorkspaceThreeMaximized(false);
+      }
+      refreshWorkspaceThreeConnection();
+      renderChats();
+    }
+
+    function toggleWorkspaceThreeForChat(chatId) {
+      if (!chatId) return;
+      if (workspaceThreeVisible && activeWorkspaceThreeChatId === chatId) {
+        setWorkspaceThreeActiveChat(null);
+      } else {
+        setWorkspaceThreeActiveChat(chatId);
+      }
     }
 
     function disconnectWorkspaceThreeState(state) {
@@ -3563,6 +3680,7 @@
         minimized: false,
         maximized: false,
         closed: false,
+        ownerChatId: config.ownerChatId || null,
         contextMessage: config.contextMessage || null,
         connections: [],
         searchMatchIds: [],
@@ -3840,6 +3958,7 @@
         body: article.querySelector('.workspace-three-chat-body'),
         input: article.querySelector('.chat-message-input'),
         sendBtn: article.querySelector('button[id$="-send"]'),
+        ownerChatId: options.ownerChatId || null,
         contextMessage: options.contextMessage || null,
         inputPlaceholder: options.inputPlaceholder || 'Escribe un mensaje...'
       });
@@ -3864,6 +3983,8 @@
         target: targetState.element,
         anchors: [['RightMiddle'], ['LeftMiddle']]
       });
+      connection._workspaceThreeSourceState = sourceState;
+      connection._workspaceThreeTargetState = targetState;
       workspaceThreeConnections.push(connection);
       sourceState.connections.push(connection);
       targetState.connections.push(connection);
@@ -4063,6 +4184,7 @@
         name: 'Ramas de ' + chat.name,
         title: 'Ramas de ' + chat.name,
         subtitle: 'Contexto base',
+        ownerChatId: chat.id,
         x: branchOrigin.x,
         y: parentY,
         assistantPrefix: 'Nodo padre recibió: ',
@@ -4093,6 +4215,7 @@
           name: 'Paso ' + (index + 1),
           title: 'Paso ' + (index + 1),
           subtitle: chat.name,
+          ownerChatId: chat.id,
           x: childX,
           y: branchOrigin.y + (index * childSpacing),
           assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
@@ -4222,6 +4345,7 @@
         name: 'Ramas de ' + chat.name,
         title: 'Ramas de ' + chat.name,
         subtitle: 'Contexto base',
+        ownerChatId: chat.id,
         x: branchOrigin.x,
         y: parentY,
         assistantPrefix: 'Nodo padre recibió: ',
@@ -4254,6 +4378,7 @@
           name: 'Paso ' + (index + 1),
           title: 'Paso ' + (index + 1),
           subtitle: chat.name,
+          ownerChatId: chat.id,
           x: childX,
           y: branchOrigin.y + (index * childSpacing),
           assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
@@ -4274,6 +4399,8 @@
       });
 
       chat.statusMessage = null;
+      chat.hasBranches = true;
+      setWorkspaceThreeActiveChat(chat.id);
       setTemporaryChatStatus(chat, 'Se crearon ' + plan.steps.length + ' ramas en Workspace Three.');
       workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -4391,6 +4518,8 @@
         await handleResumenCommand(chat, 'anclados');
       } else if (command === 'resumen-general') {
         await handleResumenCommand(chat, 'general');
+      } else if (command === 'ramas') {
+        handleRamasCommandShortcut(chat);
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
         chat.consoleShowDelete = false;
@@ -4410,6 +4539,25 @@
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
         if (!freshInput) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    function handleRamasCommandShortcut(chat) {
+      if (chat.hasBranches) {
+        setTemporaryChatStatus(chat, 'Este chat ya contiene ramas asociadas.');
+        return;
+      }
+      chat.draftText = '/ramas';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
         freshInput.focus();
         freshInput.value = chat.draftText;
         freshInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -4925,6 +5073,7 @@
 
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="ramas">/ramas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
@@ -4959,6 +5108,14 @@
         if (viewingVersion && !isPickerMode) {
           versionBannerHtml = '<div class="version-banner"><span>&#128337; Viendo ' + escapeHtml(viewingVersion.label) + ' (solo lectura, puedes anclar mensajes para /resumen)</span><button type="button" class="back-to-current-version">Volver a versión actual</button></div>';
         }
+        const hasBranches = Boolean(chat.hasBranches);
+        const hierarchyActive = hasBranches && workspaceThreeVisible && activeWorkspaceThreeChatId === chat.id;
+        const branchesBannerHtml = hasBranches
+          ? '<div class="status-banner branches-banner">Este chat contiene ramas asociadas.</div>'
+          : '';
+        const hierarchyButtonHtml = hasBranches
+          ? '<div class="chat-title-tools"><button type="button" class="hierarchy-toggle' + (hierarchyActive ? ' active' : '') + '" title="' + (hierarchyActive ? 'Ocultar ramas asociadas' : 'Mostrar ramas asociadas') + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="12" cy="18" r="2"></circle><path d="M8 6h8"></path><path d="M7.4 7.2l3.3 8.2"></path><path d="M16.6 7.2l-3.3 8.2"></path></svg></button></div>'
+          : '';
         const statusBannerHtml = chat.statusMessage
           ? '<div class="status-banner">' + escapeHtml(chat.statusMessage) + '</div>'
           : '';
@@ -4970,6 +5127,7 @@
                 <div class="panel-dot"></div>
                 <strong class="chat-title-text">${chat.name}</strong>
               </div>
+              ${hierarchyButtonHtml}
               <div class="panel-main-actions">
                 <button type="button" class="min-btn" title="Minimizar">&#8722;</button>
                 <button type="button" class="max-btn" title="Maximizar">&#9633;</button>
@@ -5009,20 +5167,21 @@
               </div>
             </div>
           </div>
-          <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
+          <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (branchesBannerHtml + contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
           <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
+          ${branchesBannerHtml}
           ${statusBannerHtml}
           ${versionBannerHtml}
           ${(chat.viewingVersionId || isPickerMode) ? '' : replyBannerHtml}
-          <div class="panel-input"${(chat.viewingVersionId || isPickerMode) ? ' hidden' : ''}>
+          <div class="panel-input${hasBranches ? ' branch-locked' : ''}"${(chat.viewingVersionId || isPickerMode) ? ' hidden' : ''}>
             <div class="panel-attach">
-              <button type="button" class="attach-toggle" title="Adjuntar">+</button>
+              <button type="button" class="attach-toggle" title="Adjuntar"${hasBranches ? ' disabled' : ''}>+</button>
               <div class="panel-attach-menu">
                 <button type="button" class="attach-file-btn">Adjuntar archivo</button>
               </div>
             </div>
-            <textarea class="chat-message-input" rows="2" placeholder="${chat.editingIndex != null ? 'Editando mensaje...' : 'Escribe un mensaje...'}"></textarea>
-            <button type="button" class="send-btn">Enviar</button>
+            <textarea class="chat-message-input" rows="2" placeholder="${hasBranches ? 'Chat bloqueado por ramas asociadas.' : (chat.editingIndex != null ? 'Editando mensaje...' : 'Escribe un mensaje...')}"${hasBranches ? ' disabled' : ''}></textarea>
+            <button type="button" class="send-btn"${hasBranches ? ' disabled' : ''}>Enviar</button>
           </div>
           ${(chat.isPrivate && !chat.unlocked) ? '<div class="privacy-overlay"><div class="privacy-overlay-box"><div>&#128274; Chat privado</div><div class="privacy-overlay-form"><input type="password" class="privacy-password-input" placeholder="Contraseña" autocomplete="off" /><button type="button" class="privacy-unlock-btn" title="Desbloquear">&#128274;</button></div><div class="privacy-overlay-error"></div></div></div>' : ''}
         `;
@@ -5032,6 +5191,13 @@
           event.stopPropagation();
           startEditChatTitle(chat.id, panel);
         });
+        const hierarchyToggle = panel.querySelector('.hierarchy-toggle');
+        if (hierarchyToggle) {
+          hierarchyToggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleWorkspaceThreeForChat(chat.id);
+          });
+        }
         const panelTop = panel.querySelector('.panel-top');
 
         panel.addEventListener('click', (event) => {
@@ -6576,6 +6742,7 @@
     });
 
     async function bootstrap() {
+      if (workspaceThreeSection) workspaceThreeSection.hidden = true;
       applyAuthUser();
       const user = loadAuthUser();
       if (user && user.sub) {
