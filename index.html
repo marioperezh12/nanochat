@@ -2311,6 +2311,13 @@
       font-size: 0.8rem;
     }
 
+    .chat-compose-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+    }
+
     .chat-message-input {
       resize: none;
       min-height: 56px;
@@ -2318,6 +2325,64 @@
       overflow-y: auto;
       font-family: inherit;
       line-height: 1.4;
+      width: 100%;
+    }
+
+    .mention-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(100% + 8px);
+      max-height: 220px;
+      overflow: auto;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(7, 18, 22, 0.98);
+      box-shadow: var(--shadow);
+      display: none;
+      z-index: 35;
+    }
+
+    .mention-menu.open {
+      display: grid;
+      gap: 4px;
+    }
+
+    .mention-item {
+      width: 100%;
+      border: none;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      padding: 8px 10px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .mention-item:hover,
+    .mention-item.active {
+      background: rgba(65, 214, 199, 0.14);
+      color: var(--text);
+    }
+
+    .mention-item-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .mention-item-path {
+      color: var(--muted);
+      font-size: 0.7rem;
+      white-space: nowrap;
+      flex: none;
     }
 
     .panel-attach {
@@ -2424,7 +2489,6 @@
     .panel-input button {
       border-radius: 4px;
       padding: 0 14px;
-      font-weight: 800;
       font-size: 0.78rem;
     }
 
@@ -3695,6 +3759,130 @@
       chat.folderPanelOpen = true;
       await saveChatToStorage(chat);
       renderChats();
+    }
+
+    function getChatFolderFileEntries(chat) {
+      const tree = chat?.folderSelection?.tree;
+      if (!tree) return [];
+      const folderBrowser = window.nanochatFolderBrowser;
+      if (folderBrowser && typeof folderBrowser.flattenFiles === 'function') {
+        return folderBrowser.flattenFiles(tree);
+      }
+      const entries = [];
+      const walk = (node) => {
+        if (!node) return;
+        if (node.type === 'file') {
+          entries.push({
+            name: node.name || 'archivo',
+            path: node.path || node.name || 'archivo',
+            size: Number(node.size) || 0
+          });
+          return;
+        }
+        if (Array.isArray(node.children)) {
+          node.children.forEach(walk);
+        }
+      };
+      walk(tree);
+      return entries;
+    }
+
+    function getMentionStateFromInput(value, caretIndex) {
+      const text = String(value || '');
+      const caret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : text.length, text.length));
+      const beforeCaret = text.slice(0, caret);
+      const atIndex = beforeCaret.lastIndexOf('@');
+      if (atIndex === -1) return null;
+      const query = beforeCaret.slice(atIndex + 1);
+      if (/\s/.test(query)) return null;
+      return {
+        tokenStart: atIndex,
+        query: query.trim().toLowerCase()
+      };
+    }
+
+    function hideMentionMenu(panel) {
+      const menu = panel?.querySelector('.mention-menu');
+      if (!menu) return;
+      menu.hidden = true;
+      menu.classList.remove('open');
+      menu.innerHTML = '';
+    }
+
+    function renderMentionMenu(chat, panel, input) {
+      const menu = panel?.querySelector('.mention-menu');
+      if (!menu || !input) return;
+      const files = getChatFolderFileEntries(chat);
+      if (!files.length) {
+        hideMentionMenu(panel);
+        return;
+      }
+      const state = getMentionStateFromInput(input.value, input.selectionStart ?? input.value.length);
+      if (!state) {
+        hideMentionMenu(panel);
+        return;
+      }
+      const query = state.query;
+      const filtered = (query
+        ? files.filter(item => {
+          const name = String(item.name || '').toLowerCase();
+          const path = String(item.path || '').toLowerCase();
+          return name.includes(query) || path.includes(query);
+        })
+        : files.slice()
+      ).sort((a, b) => {
+        const aName = String(a.name || '').toLowerCase();
+        const bName = String(b.name || '').toLowerCase();
+        const aPath = String(a.path || '').toLowerCase();
+        const bPath = String(b.path || '').toLowerCase();
+        const aScore = aName.startsWith(query) ? 0 : aPath.startsWith(query) ? 1 : 2;
+        const bScore = bName.startsWith(query) ? 0 : bPath.startsWith(query) ? 1 : 2;
+        return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
+      }).slice(0, 10);
+      if (!filtered.length) {
+        menu.innerHTML = '<div class="empty-state">Sin archivos que coincidan</div>';
+        menu.hidden = false;
+        menu.classList.add('open');
+        chat.mentionSuggestions = [];
+        chat.mentionActiveIndex = 0;
+        chat.mentionTokenStart = state.tokenStart;
+        return;
+      }
+      chat.mentionSuggestions = filtered;
+      chat.mentionActiveIndex = Math.min(Number(chat.mentionActiveIndex) || 0, filtered.length - 1);
+      chat.mentionTokenStart = state.tokenStart;
+      menu.innerHTML = filtered.map((item, index) => (
+        '<button type="button" class="mention-item' + (index === chat.mentionActiveIndex ? ' active' : '') + '" data-mention-index="' + index + '" data-mention-path="' + escapeHtml(item.path) + '">'
+        + '<span class="mention-item-name">@' + escapeHtml(item.name || item.path) + '</span>'
+        + '<span class="mention-item-path">' + escapeHtml(item.path || '') + '</span>'
+        + '</button>'
+      )).join('');
+      menu.hidden = false;
+      menu.classList.add('open');
+    }
+
+    function selectMentionSuggestion(chat, panel, index) {
+      const menu = panel?.querySelector('.mention-menu');
+      const input = panel?.querySelector('.chat-message-input');
+      const suggestions = Array.isArray(chat.mentionSuggestions) ? chat.mentionSuggestions : [];
+      if (!menu || !input || !suggestions.length) return;
+      const safeIndex = Math.max(0, Math.min(Number(index) || 0, suggestions.length - 1));
+      const item = suggestions[safeIndex];
+      if (!item) return;
+      const caret = input.selectionStart ?? input.value.length;
+      const tokenStart = Number.isFinite(chat.mentionTokenStart) ? chat.mentionTokenStart : input.value.lastIndexOf('@', caret);
+      const start = tokenStart >= 0 ? tokenStart : caret;
+      const nextValue = input.value.slice(0, start) + '@' + (item.path || item.name || '') + ' ' + input.value.slice(caret);
+      input.value = nextValue;
+      input.focus();
+      const nextCaret = (input.value.slice(0, start) + '@' + (item.path || item.name || '') + ' ').length;
+      input.setSelectionRange(nextCaret, nextCaret);
+      chat.draftText = nextValue;
+      chat.mentionSuggestions = [];
+      chat.mentionActiveIndex = 0;
+      chat.mentionTokenStart = null;
+      hideMentionMenu(panel);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     function buildPinnedShareText(messages, pinnedIndices, chatName, responseMode) {
@@ -6778,7 +6966,10 @@
                 <button type="button" class="attach-file-btn">Adjuntar archivo</button>
               </div>
             </div>
-            <textarea class="chat-message-input" rows="2" placeholder="${hasBranches ? 'Chat bloqueado por ramas asociadas.' : (chat.editingIndex != null ? 'Editando mensaje...' : 'Escribe un mensaje...')}"${hasBranches ? ' disabled' : ''}></textarea>
+            <div class="chat-compose-wrap">
+              <textarea class="chat-message-input" rows="2" placeholder="${hasBranches ? 'Chat bloqueado por ramas asociadas.' : (chat.editingIndex != null ? 'Editando mensaje...' : 'Escribe un mensaje...')}"${hasBranches ? ' disabled' : ''}></textarea>
+              <div class="mention-menu" hidden></div>
+            </div>
             <button type="button" class="send-btn"${hasBranches ? ' disabled' : ''}>Enviar</button>
           </div>
           ${(chat.isPrivate && !chat.unlocked) ? '<div class="privacy-overlay"><div class="privacy-overlay-box"><div>&#128274; Chat privado</div><div class="privacy-overlay-form"><input type="password" class="privacy-password-input" placeholder="Contraseña" autocomplete="off" /><button type="button" class="privacy-unlock-btn" title="Desbloquear">&#128274;</button></div><div class="privacy-overlay-error"></div></div></div>' : ''}
@@ -6978,17 +7169,33 @@
           });
         }
         const chatInput = panel.querySelector('.chat-message-input');
+        const mentionMenu = panel.querySelector('.mention-menu');
+        const refreshMentionMenu = () => {
+          if (!chat.folderSelection) {
+            hideMentionMenu(panel);
+            return;
+          }
+          renderMentionMenu(chat, panel, chatInput);
+        };
         chatInput.addEventListener('pointerdown', (event) => event.stopPropagation());
         chatInput.addEventListener('focus', () => {
           if (chat.flashHighlight) {
             chat.flashHighlight = false;
             panel.classList.remove('flash-highlight');
           }
+          refreshMentionMenu();
         });
+        chatInput.addEventListener('click', refreshMentionMenu);
         chatInput.addEventListener('input', () => {
           chat.draftText = chatInput.value;
           chatInput.style.height = 'auto';
           chatInput.style.height = chatInput.scrollHeight + 'px';
+          refreshMentionMenu();
+        });
+        chatInput.addEventListener('keyup', (event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+            refreshMentionMenu();
+          }
         });
         if (chat.editingIndex != null) {
           const editingMessage = chat.messages[chat.editingIndex];
@@ -7103,6 +7310,32 @@
           pinsWrap.classList.remove('open');
         });
         chatInput.addEventListener('keydown', (event) => {
+          const menuOpen = Boolean(mentionMenu && mentionMenu.classList.contains('open'));
+          if (menuOpen) {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              const suggestions = Array.isArray(chat.mentionSuggestions) ? chat.mentionSuggestions : [];
+              if (!suggestions.length) return;
+              const direction = event.key === 'ArrowDown' ? 1 : -1;
+              const nextIndex = ((Number(chat.mentionActiveIndex) || 0) + direction + suggestions.length) % suggestions.length;
+              chat.mentionActiveIndex = nextIndex;
+              renderMentionMenu(chat, panel, chatInput);
+              return;
+            }
+            if (event.key === 'Enter' || event.key === 'Tab') {
+              const suggestions = Array.isArray(chat.mentionSuggestions) ? chat.mentionSuggestions : [];
+              if (suggestions.length) {
+                event.preventDefault();
+                selectMentionSuggestion(chat, panel, Number(chat.mentionActiveIndex) || 0);
+                return;
+              }
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              hideMentionMenu(panel);
+              return;
+            }
+          }
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             sendMessage(chat.id, panel);
@@ -7113,6 +7346,16 @@
             renderChats();
           }
         });
+
+        if (mentionMenu) {
+          mentionMenu.addEventListener('pointerdown', (event) => event.preventDefault());
+          mentionMenu.addEventListener('click', (event) => {
+            const item = event.target.closest('.mention-item');
+            if (!item) return;
+            event.stopPropagation();
+            selectMentionSuggestion(chat, panel, Number(item.getAttribute('data-mention-index')) || 0);
+          });
+        }
 
         const panelBodyEl = panel.querySelector('.panel-body');
         panelBodyEl.addEventListener('click', (event) => {
@@ -8198,6 +8441,12 @@
       }
       document.querySelectorAll('.panel-attach.open, .panel-history.open, .mode-select.open, .panel-pins.open, .panel-share.open, .panel-search.open, .panel-console.open').forEach(el => {
         if (!el.contains(event.target)) el.classList.remove('open');
+      });
+      document.querySelectorAll('.mention-menu.open').forEach(menu => {
+        if (!menu.contains(event.target) && !event.target.closest('.chat-compose-wrap')) {
+          menu.classList.remove('open');
+          menu.hidden = true;
+        }
       });
       if (workspaceSettings && !workspaceSettings.contains(event.target)) {
         workspaceSettings.classList.remove('open');

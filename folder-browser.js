@@ -103,6 +103,22 @@
       : 0;
   }
 
+  function flattenFiles(node, output = []) {
+    if (!node) return output;
+    if (node.type === 'file') {
+      output.push({
+        name: node.name || 'archivo',
+        path: node.path || node.name || 'archivo',
+        size: Number(node.size) || 0
+      });
+      return output;
+    }
+    if (Array.isArray(node.children)) {
+      node.children.forEach(child => flattenFiles(child, output));
+    }
+    return output;
+  }
+
   function renderNodeList(children) {
     if (!Array.isArray(children) || !children.length) return '';
     return '<ul class="folder-tree-list">'
@@ -173,6 +189,7 @@
   window.nanochatFolderBrowser = {
     selectDirectory,
     renderDirectoryTreeHtml,
-    buildTree
+    buildTree,
+    flattenFiles
   };
 })();
