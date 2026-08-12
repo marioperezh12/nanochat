@@ -3878,13 +3878,25 @@
         saveWorkspaceThreeToStorage();
         return;
       }
-      const ramasMatch = text.match(/^\/ramas(?:\s+([\s\S]*))?$/i);
-      if (ramasMatch) {
+      const ramasParalelasMatch = text.match(/^\/ramas-paralelas(?:\s+([\s\S]*))?$/i);
+      if (ramasParalelasMatch) {
         state.input.value = '';
         try {
-          await handleWorkspaceThreeRamasCommand(state, (ramasMatch[1] || '').trim());
+          await handleWorkspaceThreeBranchCommand(state, (ramasParalelasMatch[1] || '').trim(), 'parallel');
         } catch (error) {
-          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas.';
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas-paralelas.';
+          addWorkspaceThreeMessage(state, 'assistant', errorText);
+          saveWorkspaceThreeToStorage();
+        }
+        return;
+      }
+      const ramasSecuencialesMatch = text.match(/^\/ramas-secuenciales(?:\s+([\s\S]*))?$/i);
+      if (ramasSecuencialesMatch) {
+        state.input.value = '';
+        try {
+          await handleWorkspaceThreeBranchCommand(state, (ramasSecuencialesMatch[1] || '').trim(), 'sequential');
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas-secuenciales.';
           addWorkspaceThreeMessage(state, 'assistant', errorText);
           saveWorkspaceThreeToStorage();
         }
@@ -4295,7 +4307,8 @@
         + '<button type="button" class="console-item panzoom-exclude" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación de este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="chatsversion">/chatsversion<span class="console-item-desc">Carga una versión anterior guardada de este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="eliminar">/eliminar<span class="console-item-desc">Elimina la conversación actual o una versión guardada</span></button>'
-        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas">/ramas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas desde este chat</span></button>';
+        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>';
       return '<div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">'
         + '<div class="panel-title-row">'
         + '<div class="panel-title">'
@@ -4639,7 +4652,7 @@
       const activeKey = getEngineKey(selectedEngine);
       const engineName = engineLabel(selectedEngine);
       if (!activeKey) {
-        throw new Error('Conecta tu API key de ' + engineName + ' para usar /ramas.');
+        throw new Error('Conecta tu API key de ' + engineName + ' para usar comandos de ramas.');
       }
 
       const branchInstruction = 'Analiza esta conversación y el último mensaje del asistente. '
@@ -5028,7 +5041,7 @@
       const activeKey = getEngineKey(selectedEngine);
       const engineName = engineLabel(selectedEngine);
       if (!activeKey) {
-        throw new Error('Conecta tu API key de ' + engineName + ' para usar /ramas.');
+        throw new Error('Conecta tu API key de ' + engineName + ' para usar comandos de ramas.');
       }
       const filterText = String(branchFilter || '').trim();
       const branchInstruction = 'Analiza esta conversación y el último mensaje del asistente. '
@@ -5063,7 +5076,7 @@
       const steps = parsedSteps.length ? parsedSteps : fallbackSteps;
       if (!steps.length) {
         throw new Error(filterText
-          ? 'No encontré pasos que coincidan con ese filtro para /ramas.'
+          ? 'No encontré pasos que coincidan con ese filtro para el comando de ramas.'
           : 'No pude extraer pasos accionables del último mensaje del asistente.');
       }
       return {
@@ -5110,9 +5123,70 @@
       };
     }
 
-    async function handleWorkspaceThreeRamasCommand(sourceState, branchFilter = '') {
+    function getBranchModeMeta(mode) {
+      return mode === 'sequential'
+        ? { command: '/ramas-secuenciales', label: 'secuenciales' }
+        : { command: '/ramas-paralelas', label: 'paralelas' };
+    }
+
+    function getWorkspaceThreeInlineSequentialBranchLayout(sourceState) {
+      const stepSpacing = 560;
+      const sourceX = Number(sourceState.element?.dataset?.x || 180);
+      const sourceY = Number(sourceState.element?.dataset?.y || 140);
+      const canvasWidth = workspaceThreeCanvas?.clientWidth || 1800;
+      const canvasHeight = workspaceThreeCanvas?.clientHeight || 1200;
+      const existingChildren = (sourceState.connections || [])
+        .filter(connection => connection?._workspaceThreeSourceState === sourceState)
+        .map(connection => connection?._workspaceThreeTargetState)
+        .filter(childState => childState && !childState.closed);
+      const initialStartX = clampWorkspaceThreeValue(sourceX + 700, sourceX + 420, Math.max(sourceX + 420, canvasWidth - 520));
+      const maxChildX = existingChildren.reduce((max, childState) => {
+        const x = Number(childState.element?.dataset?.x || initialStartX);
+        return Math.max(max, x);
+      }, initialStartX - stepSpacing);
+      const startX = existingChildren.length
+        ? clampWorkspaceThreeValue(maxChildX + stepSpacing, sourceX + 420, Math.max(sourceX + 420, canvasWidth - 520))
+        : initialStartX;
+      return {
+        startX,
+        stepSpacing,
+        y: clampWorkspaceThreeValue(sourceY, 120, Math.max(120, canvasHeight - 180))
+      };
+    }
+
+    function getWorkspaceThreeSequentialBranchOrigin(stepCount, ownerChatName) {
+      const ownerChats = workspaceThreeMiniChats.filter(item => !item.closed && item.ownerChatName === ownerChatName);
+      const stepSpacing = 560;
+      const totalNodes = stepCount + 1;
+      const chainWidth = Math.max(0, (totalNodes - 1) * stepSpacing);
+      const canvasWidth = workspaceThreeCanvas?.clientWidth || 1800;
+      const canvasHeight = workspaceThreeCanvas?.clientHeight || 1200;
+      if (!ownerChats.length) {
+        const center = getWorkspaceThreeViewportCenter();
+        return {
+          x: clampWorkspaceThreeValue(center.x - (chainWidth / 2), 120, Math.max(120, canvasWidth - 520 - chainWidth)),
+          y: clampWorkspaceThreeValue(center.y - 60, 120, Math.max(120, canvasHeight - 180)),
+          stepSpacing
+        };
+      }
+      const maxY = ownerChats.reduce((max, item) => {
+        const y = Number(item.element?.dataset?.y || 140);
+        return Math.max(max, y);
+      }, 140);
+      return {
+        x: 180,
+        y: clampWorkspaceThreeValue(maxY + 340, 120, Math.max(120, canvasHeight - 180)),
+        stepSpacing
+      };
+    }
+
+    async function handleWorkspaceThreeBranchCommand(sourceState, branchFilter = '', mode = 'parallel') {
       const plan = await buildBranchPlanFromWorkspaceThreeState(sourceState, branchFilter);
-      const branchLayout = getWorkspaceThreeInlineBranchLayout(sourceState, plan.steps.length);
+      const isSequential = mode === 'sequential';
+      const branchLayout = isSequential
+        ? getWorkspaceThreeInlineSequentialBranchLayout(sourceState)
+        : getWorkspaceThreeInlineBranchLayout(sourceState, plan.steps.length);
+      let previousState = sourceState;
       plan.steps.forEach((step, index) => {
         const stepLabel = extractWorkspaceThreeIntentLabel(step, index);
         const stepTitle = stepLabel === ('Paso ' + (index + 1))
@@ -5130,8 +5204,8 @@
           subtitle: sourceState.titleStrong?.textContent || sourceState.name || 'Workspace Three',
           ownerChatId: sourceState.ownerChatId || null,
           ownerChatName: sourceState.ownerChatName || null,
-          x: branchLayout.childX,
-          y: branchLayout.startY + (index * branchLayout.childSpacing),
+          x: isSequential ? (branchLayout.startX + (index * branchLayout.stepSpacing)) : branchLayout.childX,
+          y: isSequential ? branchLayout.y : (branchLayout.startY + (index * branchLayout.childSpacing)),
           assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
           inputPlaceholder: 'Desarrolla este paso...',
           contextMessage: {
@@ -5146,7 +5220,10 @@
             }
           ]
         });
-        if (childState) connectWorkspaceThreeNodes(sourceState, childState);
+        if (childState) {
+          connectWorkspaceThreeNodes(previousState, childState);
+          if (isSequential) previousState = childState;
+        }
       });
       saveWorkspaceThreeToStorage();
     }
@@ -5164,7 +5241,7 @@
       const activeKey = getEngineKey(selectedEngine);
       const engineName = engineLabel(selectedEngine);
       if (!activeKey) {
-        throw new Error('Conecta tu API key de ' + engineName + ' para usar /ramas.');
+        throw new Error('Conecta tu API key de ' + engineName + ' para usar comandos de ramas.');
       }
       const filterText = String(branchFilter || '').trim();
 
@@ -5200,7 +5277,7 @@
       const steps = parsedSteps.length ? parsedSteps : fallbackSteps;
       if (!steps.length) {
         throw new Error(filterText
-          ? 'No encontré pasos que coincidan con ese filtro para /ramas.'
+          ? 'No encontré pasos que coincidan con ese filtro para el comando de ramas.'
           : 'No pude extraer pasos accionables del último mensaje del asistente.');
       }
       return {
@@ -5212,17 +5289,21 @@
       };
     }
 
-    async function handleRamasCommand(chat, branchFilter = '') {
-      chat.statusMessage = 'Generando ramas...';
+    async function handleBranchCommand(chat, branchFilter = '', mode = 'parallel') {
+      const branchMeta = getBranchModeMeta(mode);
+      const isSequential = mode === 'sequential';
+      chat.statusMessage = 'Generando ramas ' + branchMeta.label + '...';
       renderChats();
 
       const plan = await buildBranchPlanFromChat(chat, branchFilter);
       const isFirstBranchLayout = !workspaceThreeMiniChats.some(item => !item.closed && item.ownerChatName === chat.name);
       const childSpacing = isFirstBranchLayout ? 300 : 240;
-      const branchOrigin = getWorkspaceThreeBranchOrigin(plan.steps.length, chat.name, childSpacing);
-      const childX = branchOrigin.x + (isFirstBranchLayout ? 760 : 700);
+      const branchOrigin = isSequential
+        ? getWorkspaceThreeSequentialBranchOrigin(plan.steps.length, chat.name)
+        : getWorkspaceThreeBranchOrigin(plan.steps.length, chat.name, childSpacing);
+      const childX = isSequential ? null : (branchOrigin.x + (isFirstBranchLayout ? 760 : 700));
       const totalHeight = Math.max(0, (plan.steps.length - 1) * childSpacing);
-      const parentY = branchOrigin.y + (totalHeight / 2);
+      const parentY = isSequential ? branchOrigin.y : (branchOrigin.y + (totalHeight / 2));
       const stepsText = plan.steps.map((step, index) => (index + 1) + '. ' + step).join('\n\n');
       const parentContext = (plan.filterText ? ('Filtro aplicado:\n' + plan.filterText + '\n\n') : '')
         + 'Resumen del chat:\n'
@@ -5258,6 +5339,7 @@
         throw new Error('No pude crear el nodo padre en Workspace Three.');
       }
 
+      let previousState = parentState;
       plan.steps.forEach((step, index) => {
         const stepLabel = extractWorkspaceThreeIntentLabel(step, index);
         const stepTitle = stepLabel === ('Paso ' + (index + 1))
@@ -5275,8 +5357,8 @@
           subtitle: 'Paso ' + (index + 1),
           ownerChatId: chat.id,
           ownerChatName: chat.name,
-          x: childX,
-          y: branchOrigin.y + (index * childSpacing),
+          x: isSequential ? (branchOrigin.x + ((index + 1) * branchOrigin.stepSpacing)) : childX,
+          y: isSequential ? branchOrigin.y : (branchOrigin.y + (index * childSpacing)),
           assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
           inputPlaceholder: 'Desarrolla este paso...',
           contextMessage: {
@@ -5291,14 +5373,17 @@
             }
           ]
         });
-        if (childState) connectWorkspaceThreeNodes(parentState, childState);
+        if (childState) {
+          connectWorkspaceThreeNodes(isSequential ? previousState : parentState, childState);
+          if (isSequential) previousState = childState;
+        }
       });
 
       chat.statusMessage = null;
       chat.hasBranches = true;
       saveChatToStorage(chat);
       setWorkspaceThreeActiveChat(chat.id);
-      setTemporaryChatStatus(chat, 'Se crearon ' + plan.steps.length + ' ramas en Workspace Three.');
+      setTemporaryChatStatus(chat, 'Se crearon ' + plan.steps.length + ' ramas ' + branchMeta.label + ' en Workspace Three.');
       workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -5415,8 +5500,10 @@
         await handleResumenCommand(chat, 'anclados');
       } else if (command === 'resumen-general') {
         await handleResumenCommand(chat, 'general');
-      } else if (command === 'ramas') {
-        handleRamasCommandShortcut(chat);
+      } else if (command === 'ramas-paralelas') {
+        handleBranchCommandShortcut(chat, 'parallel');
+      } else if (command === 'ramas-secuenciales') {
+        handleBranchCommandShortcut(chat, 'sequential');
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
         chat.consoleShowDelete = false;
@@ -5445,12 +5532,12 @@
       });
     }
 
-    function handleRamasCommandShortcut(chat) {
+    function handleBranchCommandShortcut(chat, mode) {
       if (chat.hasBranches) {
         setTemporaryChatStatus(chat, 'Este chat ya contiene ramas asociadas.');
         return;
       }
-      chat.draftText = '/ramas';
+      chat.draftText = mode === 'sequential' ? '/ramas-secuenciales' : '/ramas-paralelas';
       renderChats();
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
@@ -5475,8 +5562,10 @@
         handleWorkspaceThreeVersionsCommand(state);
       } else if (command === 'eliminar') {
         handleWorkspaceThreeDeleteCommand(state);
-      } else if (command === 'ramas') {
-        handleWorkspaceThreeRamasCommandShortcut(state);
+      } else if (command === 'ramas-paralelas') {
+        handleWorkspaceThreeBranchCommandShortcut(state, 'parallel');
+      } else if (command === 'ramas-secuenciales') {
+        handleWorkspaceThreeBranchCommandShortcut(state, 'sequential');
       }
     }
 
@@ -5494,8 +5583,8 @@
       setWorkspaceThreeInputCommand(state, '/contexto: ' + current);
     }
 
-    function handleWorkspaceThreeRamasCommandShortcut(state) {
-      setWorkspaceThreeInputCommand(state, '/ramas');
+    function handleWorkspaceThreeBranchCommandShortcut(state, mode) {
+      setWorkspaceThreeInputCommand(state, mode === 'sequential' ? '/ramas-secuenciales' : '/ramas-paralelas');
     }
 
     function openImportModal() {
@@ -6008,7 +6097,8 @@
 
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
-          + '<button type="button" class="console-item" data-command="ramas">/ramas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas</span></button>'
+          + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
+          + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
@@ -7232,14 +7322,28 @@
         return;
       }
 
-      const ramasMatch = text.match(/^\/ramas(?:\s+([\s\S]*))?$/i);
-      if (ramasMatch) {
+      const ramasParalelasMatch = text.match(/^\/ramas-paralelas(?:\s+([\s\S]*))?$/i);
+      if (ramasParalelasMatch) {
         input.value = '';
         chat.draftText = '';
         try {
-          await handleRamasCommand(chat, (ramasMatch[1] || '').trim());
+          await handleBranchCommand(chat, (ramasParalelasMatch[1] || '').trim(), 'parallel');
         } catch (error) {
-          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas.';
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas-paralelas.';
+          chat.statusMessage = null;
+          setTemporaryChatStatus(chat, errorText, 4200);
+        }
+        return;
+      }
+
+      const ramasSecuencialesMatch = text.match(/^\/ramas-secuenciales(?:\s+([\s\S]*))?$/i);
+      if (ramasSecuencialesMatch) {
+        input.value = '';
+        chat.draftText = '';
+        try {
+          await handleBranchCommand(chat, (ramasSecuencialesMatch[1] || '').trim(), 'sequential');
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas-secuenciales.';
           chat.statusMessage = null;
           setTemporaryChatStatus(chat, errorText, 4200);
         }
