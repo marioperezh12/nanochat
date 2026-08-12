@@ -50,28 +50,60 @@
   }
 
   function createFileNode(file, path) {
-    return {
+    const node = {
       type: 'file',
       name: file?.name || path.split('/').pop() || 'archivo',
       path,
-      size: Number(file?.size) || 0
+      size: Number(file?.size) || 0,
+      mimeType: String(file?.type || ''),
+      previewable: Boolean(file?.previewable || isPreviewableFile(file))
     };
+    if (file) {
+      Object.defineProperty(node, 'fileRef', {
+        value: file,
+        enumerable: false,
+        configurable: true
+      });
+    }
+    return node;
   }
 
-  function buildTree(files) {
+  function isPreviewableFile(file) {
+    const name = String(file?.name || '').toLowerCase();
+    return /\.(txt|sql|json)$/i.test(name);
+  }
+
+  async function readFileText(file) {
+    if (!file) return '';
+    if (typeof file.text === 'function') {
+      try {
+        return await file.text();
+      } catch (error) { }
+    }
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file);
+    });
+  }
+
+  async function buildTree(files) {
     const list = Array.isArray(files) ? files.filter(Boolean) : [];
     const firstPath = getRelativePath(list[0]);
     const rootName = firstPath.split('/').filter(Boolean)[0] || 'Carpeta seleccionada';
     const root = createFolderNode(rootName, rootName);
+    const filesByPath = new Map();
 
-    list.forEach(file => {
+    for (const file of list) {
       const rawPath = getRelativePath(file);
-      if (!rawPath) return;
+      if (!rawPath) continue;
       const segments = rawPath.split('/').filter(Boolean);
       const relativeSegments = segments[0] === rootName ? segments.slice(1) : segments;
       if (!relativeSegments.length) {
+        filesByPath.set(rawPath, file);
         root.children.push(createFileNode(file, rawPath));
-        return;
+        continue;
       }
       let cursor = root;
       let currentPath = rootName;
@@ -80,6 +112,7 @@
         const isLast = index === relativeSegments.length - 1;
         currentPath += '/' + segment;
         if (isLast) {
+          filesByPath.set(currentPath, file);
           cursor.children.push(createFileNode(file, currentPath));
           return;
         }
@@ -90,6 +123,12 @@
         }
         cursor = nextNode;
       });
+    }
+
+    Object.defineProperty(root, 'filesByPath', {
+      value: filesByPath,
+      enumerable: false,
+      configurable: true
     });
 
     return sortFolderChildren(root);
@@ -124,8 +163,12 @@
     return '<ul class="folder-tree-list">'
       + children.map(child => {
         if (child.type === 'file') {
+          const isPreviewable = Boolean(child.previewable);
+          const labelHtml = isPreviewable
+            ? '<a href="#" class="folder-tree-file-link" data-file-path="' + escapeHtml(child.path) + '" data-file-previewable="1">' + escapeHtml(child.name) + '</a>'
+            : '<span>' + escapeHtml(child.name) + '</span>';
           return '<li class="folder-tree-item folder-tree-file">'
-            + '<span class="folder-tree-label">📄 ' + escapeHtml(child.name) + '</span>'
+            + '<span class="folder-tree-label">📄 ' + labelHtml + '</span>'
             + '<span class="folder-tree-meta">' + escapeHtml(formatSize(child.size)) + '</span>'
             + '</li>';
         }
@@ -173,10 +216,12 @@
         startIn: options.startIn || 'documents'
       });
       if (!Array.isArray(files) || !files.length) return null;
-      const tree = buildTree(files);
+      const tree = await buildTree(files);
+      const filesByPath = tree && tree.filesByPath instanceof Map ? tree.filesByPath : null;
       return {
         name: tree.name,
         tree,
+        filesByPath,
         fileCount: countFiles(tree),
         selectedAt: Date.now()
       };

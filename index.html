@@ -1377,6 +1377,138 @@
       gap: 8px;
       overflow: auto;
       background: rgba(255, 255, 255, 0.01);
+      min-height: 0;
+    }
+
+    .panel-folder-preview-body {
+      gap: 8px;
+      overflow: auto;
+      background: rgba(255, 255, 255, 0.01);
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .folder-preview-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 100%;
+      overflow: hidden;
+    }
+
+    .folder-preview-close-btn {
+      border: 1px solid rgba(159, 229, 255, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      border-radius: 8px;
+      height: 28px;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+
+    .folder-preview-body {
+      padding: 0;
+      overflow: hidden;
+      min-height: 0;
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .folder-preview-loading,
+    .folder-preview-empty,
+    .folder-preview-error {
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 10px;
+    }
+
+    .folder-preview-error {
+      color: #ffb4b4;
+    }
+
+    .folder-file-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid rgba(159, 229, 255, 0.12);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.18);
+      min-width: 0;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    .folder-file-preview-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .folder-file-preview-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.82rem;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .folder-file-preview-title-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .folder-preview-back-icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      flex: none;
+      padding: 0;
+      border-radius: 8px;
+      line-height: 1;
+      font-size: 0.8rem;
+    }
+
+    .folder-preview-back-icon-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .folder-file-preview-meta {
+      color: var(--muted);
+      font-size: 0.7rem;
+      white-space: nowrap;
+      flex: none;
+    }
+
+    .folder-file-preview-content {
+      margin: 0;
+      padding: 10px;
+      border-radius: 8px;
+      background: rgba(3, 10, 14, 0.7);
+      color: var(--text);
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 0.76rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: none;
+      min-height: 0;
+      flex: 1 1 auto;
+      max-width: 100%;
+      border: 1px solid rgba(159, 229, 255, 0.08);
     }
 
     .folder-tree {
@@ -1445,6 +1577,17 @@
 
     .folder-tree-file>.folder-tree-label {
       color: var(--muted);
+    }
+
+    .folder-tree-file-link {
+      color: var(--text);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+    }
+
+    .folder-tree-file-link:hover {
+      color: #ffffff;
     }
 
     .folder-tree-meta {
@@ -3430,6 +3573,7 @@
               contextMessage: chat.contextMessage || null,
               folderSelection: chat.folderSelection || null,
               folderPanelOpen: Boolean(chat.folderPanelOpen),
+              folderPreviewPath: chat.folderPreviewPath || null,
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
@@ -3454,6 +3598,7 @@
               contextMessage: chat.contextMessage || null,
               folderSelection: chat.folderSelection || null,
               folderPanelOpen: Boolean(chat.folderPanelOpen),
+              folderPreviewPath: chat.folderPreviewPath || null,
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
@@ -3474,6 +3619,7 @@
           contextMessage: chat.contextMessage || null,
           folderSelection: chat.folderSelection || null,
           folderPanelOpen: Boolean(chat.folderPanelOpen),
+          folderPreviewPath: chat.folderPreviewPath || null,
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
           temporalMode: Boolean(chat.temporalMode),
@@ -3733,7 +3879,8 @@
         temporalMode: false,
         hasBranches: false,
         folderSelection: null,
-        folderPanelOpen: false
+        folderPanelOpen: false,
+        folderPreviewPath: null
       };
       chatState.forEach(item => { item.focused = false; });
       chatState.unshift(chat);
@@ -3757,6 +3904,7 @@
       if (!selection) return;
       chat.folderSelection = selection;
       chat.folderPanelOpen = true;
+      chat.folderPreviewPath = null;
       await saveChatToStorage(chat);
       renderChats();
     }
@@ -3785,6 +3933,160 @@
       };
       walk(tree);
       return entries;
+    }
+
+    function isPreviewableFolderFileName(name) {
+      return /\.(txt|sql|json)$/i.test(String(name || ''));
+    }
+
+    function findFolderTreeFileNode(node, path) {
+      if (!node || !path) return null;
+      if (node.type === 'file' && node.path === path) return node;
+      if (!Array.isArray(node.children)) return null;
+      for (const child of node.children) {
+        const found = findFolderTreeFileNode(child, path);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function renderFolderFilePreviewHtml(fileNode) {
+      if (!fileNode || fileNode.type !== 'file') return '';
+      const content = String(fileNode.content || '');
+      const title = escapeHtml(fileNode.path || fileNode.name || 'archivo');
+      const sizeLabel = escapeHtml(((Number(fileNode.size) || 0) + ' bytes'));
+      return '<div class="folder-file-preview">'
+        + '<div class="folder-file-preview-head">'
+        + '<div class="folder-file-preview-title">'
+        + '<button type="button" class="folder-preview-close-btn folder-preview-back-icon-btn" title="Volver al árbol" aria-label="Volver al árbol">&#x21A9;</button>'
+        + '<span class="folder-file-preview-title-text">' + title + '</span>'
+        + '</div>'
+        + '<div class="folder-file-preview-meta">' + sizeLabel + '</div>'
+        + '</div>'
+        + '<pre class="folder-file-preview-content">' + escapeHtml(content || 'Archivo vacío.') + '</pre>'
+        + '</div>';
+    }
+
+    function renderFolderPreviewPanelHtml(chat) {
+      const previewPath = chat?.folderPreviewPath || null;
+      const previewNode = chat?.folderSelection && previewPath
+        ? findFolderTreeFileNode(chat.folderSelection.tree, previewPath)
+        : null;
+      let bodyHtml = '';
+
+      if (chat?.folderPreviewLoading) {
+        bodyHtml = '<div class="folder-preview-loading">Cargando contenido del archivo...</div>';
+      } else if (chat?.folderPreviewError) {
+        bodyHtml = '<div class="folder-preview-error">' + escapeHtml(chat.folderPreviewError) + '</div>';
+      } else if (previewNode && isPreviewableFolderFileName(previewNode.name) && typeof previewNode.content === 'string') {
+        bodyHtml = renderFolderFilePreviewHtml(previewNode);
+      } else if (previewNode && isPreviewableFolderFileName(previewNode.name)) {
+        bodyHtml = '<div class="folder-preview-empty">Haz clic en el archivo para cargar su contenido.</div>';
+      } else if (previewPath) {
+        bodyHtml = '<div class="folder-preview-empty">Ese tipo de archivo no tiene vista previa.</div>';
+      } else {
+        bodyHtml = '<div class="folder-preview-empty">Selecciona un archivo .txt, .sql o .json para ver su contenido.</div>';
+      }
+
+      return '<div class="folder-preview-body">' + bodyHtml + '</div>';
+    }
+
+    function getLiveFolderFileReference(chat, filePath) {
+      const selection = chat?.folderSelection || null;
+      if (!selection || !filePath) return null;
+      if (selection.filesByPath instanceof Map && selection.filesByPath.has(filePath)) {
+        return selection.filesByPath.get(filePath);
+      }
+      const tree = selection.tree || null;
+      const node = tree ? findFolderTreeFileNode(tree, filePath) : null;
+      if (!node) return null;
+      return node.fileRef || node.sourceFile || node.handle || node.file || null;
+    }
+
+    async function readLiveFolderFileText(fileRef) {
+      if (!fileRef) return '';
+      if (typeof fileRef.text === 'function') {
+        return await fileRef.text();
+      }
+      if (typeof fileRef.getFile === 'function') {
+        const file = await fileRef.getFile();
+        return await readFileAsText(file);
+      }
+      if (typeof fileRef.file === 'function') {
+        const file = await fileRef.file();
+        return await readFileAsText(file);
+      }
+      return await readFileAsText(fileRef);
+    }
+
+    async function loadFolderFilePreview(chat, filePath) {
+      if (!chat?.folderSelection?.tree || !filePath) return null;
+      const node = findFolderTreeFileNode(chat.folderSelection.tree, filePath);
+      if (!node || node.type !== 'file' || !isPreviewableFolderFileName(node.name)) return null;
+      if (typeof node.content === 'string') return node;
+      const fileRef = getLiveFolderFileReference(chat, filePath);
+      if (!fileRef) return null;
+      try {
+        node.content = await readLiveFolderFileText(fileRef);
+      } catch (error) {
+        node.content = '';
+      }
+      return node;
+    }
+
+    function escapeAttribute(value) {
+      return escapeHtml(String(value ?? '')).replace(/"/g, '&quot;');
+    }
+
+    function normalizeFileEntryText(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function findChatFolderFileEntry(chat, mentionText) {
+      const target = normalizeFileEntryText(mentionText);
+      if (!target) return null;
+      const files = getChatFolderFileEntries(chat);
+      if (!files.length) return null;
+      const exact = files.find(item => normalizeFileEntryText(item.path) === target || normalizeFileEntryText(item.name) === target);
+      if (exact) return exact;
+      const byName = files.find(item => normalizeFileEntryText(item.name) === target.split('/').pop());
+      if (byName) return byName;
+      const partial = files.find(item => {
+        const name = normalizeFileEntryText(item.name);
+        const path = normalizeFileEntryText(item.path);
+        return name.includes(target) || path.includes(target);
+      });
+      return partial || null;
+    }
+
+    function buildMentionedFileDisplayHtml(chat, text) {
+      const source = String(text || '');
+      if (!source) return '';
+      const pattern = /(^|[\s(])@([^\s@]+)/g;
+      return formatMarkdown(source.replace(pattern, (match, prefix, mention) => {
+        const file = findChatFolderFileEntry(chat, mention);
+        if (!file) return match;
+        const label = '@' + (file.path || file.name || mention);
+        return prefix + '<a class="attachment-tag file-mention-link" href="#" data-file-path="' + escapeAttribute(file.path || file.name || mention) + '" title="' + escapeAttribute(file.path || file.name || mention) + '">&#128196; ' + escapeHtml(label) + '</a>';
+      }));
+    }
+
+    function resolveMentionedFiles(chat, text) {
+      const source = String(text || '');
+      if (!source) return { text: '', files: [] };
+      const mentionRe = /@([^\s@]+)/g;
+      const files = [];
+      const seen = new Set();
+      const expandedText = source.replace(mentionRe, (match, mention) => {
+        const file = findChatFolderFileEntry(chat, mention);
+        if (!file) return match;
+        const key = (file.path || file.name || mention).toLowerCase();
+        if (seen.has(key)) return match;
+        seen.add(key);
+        files.push(file);
+        return '\n\n[Archivo referenciado: ' + (file.path || file.name || mention) + ']\n' + (file.content || '');
+      });
+      return { text: expandedText, files };
     }
 
     function getMentionStateFromInput(value, caretIndex) {
@@ -6954,6 +7256,7 @@
           </div>
           <div class="panel-body panel-messages-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (branchesBannerHtml + contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
           <div class="panel-body panel-folder-body" hidden></div>
+          <div class="panel-body panel-folder-preview-body" hidden></div>
           <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
           ${branchesBannerHtml}
           ${statusBannerHtml}
@@ -6980,17 +7283,71 @@
         const folderViewButton = panel.querySelector('.folder-view-toggle');
         const messagesBody = panel.querySelector('.panel-messages-body');
         const folderBody = panel.querySelector('.panel-folder-body');
+        const folderPreviewBody = panel.querySelector('.panel-folder-preview-body');
         if (folderButton) folderButton.classList.toggle('active', folderPanelOpen);
         if (folderNameInput) folderNameInput.value = folderNameValue;
         if (folderViewButton) folderViewButton.hidden = !folderSelection;
         if (messagesBody) messagesBody.hidden = folderPanelOpen;
         if (folderBody) {
-          folderBody.hidden = !folderPanelOpen;
-          folderBody.innerHTML = folderSelection
+          folderBody.hidden = !folderPanelOpen || Boolean(chat.folderPreviewPath);
+          const folderTreeHtml = folderSelection
             ? (window.nanochatFolderBrowser && typeof window.nanochatFolderBrowser.renderDirectoryTreeHtml === 'function'
               ? window.nanochatFolderBrowser.renderDirectoryTreeHtml(folderSelection.tree)
               : '<div class="folder-tree-empty">No se pudo cargar el visor de carpetas.</div>')
             : '<div class="folder-tree-empty">Selecciona una carpeta para ver su contenido.</div>';
+          folderBody.innerHTML = folderTreeHtml;
+        }
+        if (folderPreviewBody) {
+          folderPreviewBody.hidden = !(folderPanelOpen && Boolean(chat.folderPreviewPath));
+          folderPreviewBody.innerHTML = folderPanelOpen && chat.folderPreviewPath
+            ? renderFolderPreviewPanelHtml(chat)
+            : '';
+        }
+
+        if (folderBody) {
+          folderBody.addEventListener('click', (event) => {
+            const folderFileLink = event.target.closest('.folder-tree-file-link');
+            if (!folderFileLink) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const filePath = folderFileLink.getAttribute('data-file-path');
+            if (!chat.folderSelection || !filePath) return;
+            chat.folderPanelOpen = true;
+            chat.folderPreviewPath = filePath;
+            chat.folderPreviewLoading = true;
+            chat.folderPreviewError = null;
+            saveChatToStorage(chat);
+            renderChats();
+            Promise.resolve(loadFolderFilePreview(chat, filePath)).then((previewNode) => {
+              if (!previewNode) {
+                chat.folderPreviewLoading = false;
+                chat.folderPreviewError = 'No se pudo cargar la vista previa del archivo.';
+                chat.statusMessage = 'No se pudo cargar la vista previa del archivo.';
+                saveChatToStorage(chat);
+                renderChats();
+                return;
+              }
+              chat.folderPreviewLoading = false;
+              chat.folderPreviewError = null;
+              saveChatToStorage(chat);
+              renderChats();
+            });
+          });
+        }
+        if (folderPreviewBody) {
+          folderPreviewBody.addEventListener('click', (event) => {
+            const folderPreviewCloseBtn = event.target.closest('.folder-preview-close-btn');
+            if (folderPreviewCloseBtn) {
+              event.preventDefault();
+              event.stopPropagation();
+              chat.folderPreviewPath = null;
+              chat.folderPreviewLoading = false;
+              chat.folderPreviewError = null;
+              saveChatToStorage(chat);
+              renderChats();
+              return;
+            }
+          });
         }
 
         const titleEl = panel.querySelector('.chat-title-text');
@@ -7010,7 +7367,7 @@
             if (!chat.folderSelection) return;
             chat.folderPanelOpen = true;
             if (messagesBody) messagesBody.hidden = true;
-            if (folderBody) folderBody.hidden = false;
+          if (folderBody) folderBody.hidden = false;
             saveChatToStorage(chat);
             renderChats();
           });
@@ -7358,7 +7715,7 @@
         }
 
         const panelBodyEl = panel.querySelector('.panel-body');
-        panelBodyEl.addEventListener('click', (event) => {
+        panelBodyEl.addEventListener('click', async (event) => {
           const editBtn = event.target.closest('.msg-edit');
           const copyBtn = event.target.closest('.msg-copy');
           const codeCopyBtn = event.target.closest('.code-copy');
@@ -7912,7 +8269,8 @@
         temporalMode: false,
         hasBranches: false,
         folderSelection: null,
-        folderPanelOpen: false
+        folderPanelOpen: false,
+        folderPreviewPath: null
       }));
       syncChatPositions();
       chatState.forEach(saveChatToStorage);
@@ -7965,6 +8323,7 @@
         contextMessage: item.contextMessage || null,
         folderSelection: item.folderSelection || null,
         folderPanelOpen: Boolean(item.folderPanelOpen),
+        folderPreviewPath: typeof item.folderPreviewPath === 'string' ? item.folderPreviewPath : null,
         positionIndex: Number.isFinite(item.positionIndex) ? item.positionIndex : i,
         statusMessage: null,
         consoleShowVersions: false,
@@ -8234,8 +8593,9 @@
         chat.editingIndex = null;
       }
 
-      let userContent = text;
-      let displayContent = formatMarkdown(text);
+      const resolvedMentions = resolveMentionedFiles(chat, text);
+      let userContent = resolvedMentions.text;
+      let displayContent = buildMentionedFileDisplayHtml(chat, text);
       if (chat.attachment && chat.attachment.content) {
         userContent += '\n\n[Archivo adjunto: ' + chat.attachment.name + ']\n' + chat.attachment.content;
         displayContent += '<br><a class="attachment-tag" href="' + chat.attachment.url + '" download="' + escapeHtml(chat.attachment.name) + '" target="_blank" rel="noopener">&#128206; ' + escapeHtml(chat.attachment.name) + '</a>';
