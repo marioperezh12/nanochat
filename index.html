@@ -7,6 +7,7 @@
   <title>NanoChat</title>
   <script src="https://unpkg.com/@panzoom/panzoom@4.6.2/dist/panzoom.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsplumb@2.15.6/dist/js/jsplumb.min.js"></script>
+  <script src="folder-browser.js"></script>
   <script>
     (function () {
       try {
@@ -994,6 +995,7 @@
     }
 
     .panel-actions .fav-toggle,
+    .panel-actions .folder-toggle,
     .panel-actions .key-toggle,
     .panel-actions .temporal-toggle {
       width: 28px;
@@ -1011,6 +1013,7 @@
       cursor: pointer;
     }
     .panel-actions .fav-toggle:hover,
+    .panel-actions .folder-toggle:hover,
     .panel-actions .key-toggle:hover,
     .panel-actions .temporal-toggle:hover {
       background: rgba(255,255,255,0.08);
@@ -1018,6 +1021,7 @@
       color: var(--text);
     }
     .panel-actions .fav-toggle.active,
+    .panel-actions .folder-toggle.active,
     .panel-actions .key-toggle.active {
       color: #ffd84d;
       background: rgba(255, 216, 77, 0.12);
@@ -1261,6 +1265,58 @@
       max-width: 100%;
     }
 
+    .panel-folder {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: none;
+      min-width: 0;
+    }
+
+    .folder-view-toggle {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(159, 229, 255, 0.16);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      flex: none;
+      cursor: pointer;
+    }
+
+    .folder-view-toggle:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(159, 229, 255, 0.26);
+    }
+
+    .folder-name-input {
+      width: 164px;
+      min-width: 120px;
+      max-width: min(220px, 100%);
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      border-radius: 4px;
+      font: inherit;
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      outline: none;
+    }
+
+    .folder-name-input::placeholder {
+      color: var(--muted);
+      opacity: 0.8;
+    }
+
+    .folder-name-input[readonly] {
+      cursor: pointer;
+    }
+
     .panel-history {
       position: relative;
       flex: none;
@@ -1311,6 +1367,109 @@
       overflow-y: hidden;
       position: relative;
       z-index: 0;
+    }
+
+    .panel-body[hidden] {
+      display: none !important;
+    }
+
+    .panel-folder-body {
+      gap: 8px;
+      overflow: auto;
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    .folder-tree {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .folder-tree-empty {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .folder-tree-root {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .folder-tree-root-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--text);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .folder-tree-root-head .folder-tree-count {
+      color: var(--muted);
+      font-weight: 400;
+      font-size: 0.72rem;
+    }
+
+    .folder-tree-list {
+      list-style: none;
+      margin: 0;
+      padding: 0 0 0 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      border-left: 1px solid rgba(159, 229, 255, 0.12);
+      min-width: 0;
+    }
+
+    .folder-tree-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .folder-tree-item .folder-tree-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .folder-tree-folder>.folder-tree-label {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .folder-tree-file>.folder-tree-label {
+      color: var(--muted);
+    }
+
+    .folder-tree-meta {
+      color: var(--muted);
+      font-size: 0.7rem;
+      white-space: nowrap;
+      flex: none;
+    }
+
+    .chat-panel.folder-open .scroll-to-bottom-btn {
+      display: none;
+    }
+
+    .chat-panel.folder-open .panel-input,
+    .chat-panel.folder-open .reply-banner,
+    .chat-panel.folder-open .version-banner,
+    .chat-panel.folder-open .status-banner,
+    .chat-panel.folder-open .branches-banner {
+      display: none;
+    }
+
+    .chat-panel.folder-open .panel-body.panel-folder-body {
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .scroll-to-bottom-btn {
@@ -3206,6 +3365,8 @@
               versions: Array.isArray(chat.versions) ? chat.versions : [],
               currentSourceLabel: chat.currentSourceLabel || null,
               contextMessage: chat.contextMessage || null,
+              folderSelection: chat.folderSelection || null,
+              folderPanelOpen: Boolean(chat.folderPanelOpen),
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
@@ -3228,6 +3389,8 @@
             versions: Array.isArray(chat.versions) ? chat.versions : [],
             currentSourceLabel: chat.currentSourceLabel || null,
               contextMessage: chat.contextMessage || null,
+              folderSelection: chat.folderSelection || null,
+              folderPanelOpen: Boolean(chat.folderPanelOpen),
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
@@ -3246,6 +3409,8 @@
           versions: Array.isArray(chat.versions) ? chat.versions : [],
           currentSourceLabel: chat.currentSourceLabel || null,
           contextMessage: chat.contextMessage || null,
+          folderSelection: chat.folderSelection || null,
+          folderPanelOpen: Boolean(chat.folderPanelOpen),
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
           temporalMode: Boolean(chat.temporalMode),
@@ -3503,7 +3668,9 @@
         consoleShowVersions: false,
         consoleShowDelete: false,
         temporalMode: false,
-        hasBranches: false
+        hasBranches: false,
+        folderSelection: null,
+        folderPanelOpen: false
       };
       chatState.forEach(item => { item.focused = false; });
       chatState.unshift(chat);
@@ -3515,6 +3682,20 @@
         chat.blinked = false;
         renderChats();
       }, 900);
+    }
+
+    async function handleChatFolderAction(chatId, options = {}) {
+      const chat = chatState.find(item => item.id === chatId);
+      if (!chat) return;
+      const folderBrowser = window.nanochatFolderBrowser;
+      if (!folderBrowser || typeof folderBrowser.selectDirectory !== 'function') return;
+
+      const selection = await folderBrowser.selectDirectory({ startIn: options.startIn || 'documents' });
+      if (!selection) return;
+      chat.folderSelection = selection;
+      chat.folderPanelOpen = true;
+      await saveChatToStorage(chat);
+      renderChats();
     }
 
     function buildPinnedShareText(messages, pinnedIndices, chatName, responseMode) {
@@ -6336,6 +6517,10 @@
         if (chat.blinked) panel.classList.add('blinked');
         if (chat.closing) panel.classList.add('closing');
         if (chat.flashHighlight) panel.classList.add('flash-highlight');
+        const folderSelection = chat.folderSelection && typeof chat.folderSelection === 'object' ? chat.folderSelection : null;
+        const folderPanelOpen = Boolean(folderSelection && chat.folderPanelOpen);
+        const folderNameValue = folderSelection?.name || '';
+        panel.classList.toggle('folder-open', folderPanelOpen);
 
         const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
         const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
@@ -6539,6 +6724,11 @@
               </div>
             </div>
             <div class="panel-actions">
+              <div class="panel-folder">
+                <button type="button" class="folder-toggle" title="Seleccionar carpeta">&#128194;</button>
+                <input type="text" class="folder-name-input" value="${escapeHtml(folderNameValue)}" placeholder="Carpeta..." readonly />
+                <button type="button" class="folder-view-toggle" title="Ir a mensajes">&#128172;</button>
+              </div>
               <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">&#9733;</button>
               <button type="button" class="key-toggle${chat.isPrivate ? ' active' : ''}" title="${chat.isPrivate ? 'Chat privado' : 'Proteger chat con contraseña'}">&#128274;</button>
               <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#9202;</button>
@@ -6575,7 +6765,8 @@
               </div>
             </div>
           </div>
-          <div class="panel-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (branchesBannerHtml + contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
+          <div class="panel-body panel-messages-body">${isDeletePicker ? deleteListHtml : (isVersionPicker ? versionListHtml : (branchesBannerHtml + contextMessageHtml + statusBannerHtml + temporalNoticeHtml + history + attachmentNote))}</div>
+          <div class="panel-body panel-folder-body" hidden></div>
           <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
           ${branchesBannerHtml}
           ${statusBannerHtml}
@@ -6594,11 +6785,55 @@
           ${(chat.isPrivate && !chat.unlocked) ? '<div class="privacy-overlay"><div class="privacy-overlay-box"><div>&#128274; Chat privado</div><div class="privacy-overlay-form"><input type="password" class="privacy-password-input" placeholder="Contraseña" autocomplete="off" /><button type="button" class="privacy-unlock-btn" title="Desbloquear">&#128274;</button></div><div class="privacy-overlay-error"></div></div></div>' : ''}
         `;
 
+        const folderButton = panel.querySelector('.folder-toggle');
+        const folderNameInput = panel.querySelector('.folder-name-input');
+        const folderViewButton = panel.querySelector('.folder-view-toggle');
+        const messagesBody = panel.querySelector('.panel-messages-body');
+        const folderBody = panel.querySelector('.panel-folder-body');
+        if (folderButton) folderButton.classList.toggle('active', folderPanelOpen);
+        if (folderNameInput) folderNameInput.value = folderNameValue;
+        if (folderViewButton) folderViewButton.hidden = !folderSelection;
+        if (messagesBody) messagesBody.hidden = folderPanelOpen;
+        if (folderBody) {
+          folderBody.hidden = !folderPanelOpen;
+          folderBody.innerHTML = folderSelection
+            ? (window.nanochatFolderBrowser && typeof window.nanochatFolderBrowser.renderDirectoryTreeHtml === 'function'
+              ? window.nanochatFolderBrowser.renderDirectoryTreeHtml(folderSelection.tree)
+              : '<div class="folder-tree-empty">No se pudo cargar el visor de carpetas.</div>')
+            : '<div class="folder-tree-empty">Selecciona una carpeta para ver su contenido.</div>';
+        }
+
         const titleEl = panel.querySelector('.chat-title-text');
         titleEl.addEventListener('click', (event) => {
           event.stopPropagation();
           startEditChatTitle(chat.id, panel);
         });
+        if (folderButton) {
+          folderButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            handleChatFolderAction(chat.id);
+          });
+        }
+        if (folderNameInput) {
+          folderNameInput.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (!chat.folderSelection) return;
+            chat.folderPanelOpen = true;
+            if (messagesBody) messagesBody.hidden = true;
+            if (folderBody) folderBody.hidden = false;
+            saveChatToStorage(chat);
+            renderChats();
+          });
+        }
+        if (folderViewButton) {
+          folderViewButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (!chat.folderSelection) return;
+            chat.folderPanelOpen = false;
+            saveChatToStorage(chat);
+            renderChats();
+          });
+        }
         const hierarchyToggle = panel.querySelector('.hierarchy-toggle');
         if (hierarchyToggle) {
           hierarchyToggle.addEventListener('click', (event) => {
@@ -7433,7 +7668,9 @@
         consoleShowVersions: false,
         consoleShowDelete: false,
         temporalMode: false,
-        hasBranches: false
+        hasBranches: false,
+        folderSelection: null,
+        folderPanelOpen: false
       }));
       syncChatPositions();
       chatState.forEach(saveChatToStorage);
@@ -7484,6 +7721,8 @@
         viewingVersionId: null,
         currentSourceLabel: typeof item.currentSourceLabel === 'string' ? item.currentSourceLabel : null,
         contextMessage: item.contextMessage || null,
+        folderSelection: item.folderSelection || null,
+        folderPanelOpen: Boolean(item.folderPanelOpen),
         positionIndex: Number.isFinite(item.positionIndex) ? item.positionIndex : i,
         statusMessage: null,
         consoleShowVersions: false,
