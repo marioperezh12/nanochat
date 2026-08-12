@@ -1202,9 +1202,11 @@
 
     .history-menu {
       position: absolute;
-      right: 0;
+      left: 0;
+      right: auto;
       top: calc(100% + 8px);
       width: 220px;
+      max-width: min(220px, calc(100vw - 32px));
       max-height: 240px;
       overflow: auto;
       padding: 6px;
@@ -1439,9 +1441,11 @@
 
     .pins-menu {
       position: absolute;
-      right: 0;
+      left: 0;
+      right: auto;
       top: calc(100% + 8px);
       width: 220px;
+      max-width: min(220px, calc(100vw - 32px));
       max-height: 240px;
       overflow: auto;
       padding: 6px;
@@ -1465,7 +1469,8 @@
 
     .search-bar {
       position: absolute;
-      right: 0;
+      left: 0;
+      right: auto;
       top: calc(100% + 8px);
       display: none;
       align-items: center;
@@ -1477,6 +1482,7 @@
       box-shadow: var(--shadow);
       z-index: 999;
       min-width: 220px;
+      max-width: min(260px, calc(100vw - 32px));
     }
 
     .panel-search.open .search-bar {
@@ -3517,6 +3523,16 @@
         addWorkspaceThreeMessage(state, role, messageEl.textContent || '', { existingEl: messageEl });
       });
 
+      function closeWorkspaceThreeActionMenus(exceptWrap) {
+        [state.historyWrap, state.searchWrap, state.shareWrap].forEach(wrap => {
+          if (!wrap || wrap === exceptWrap) return;
+          wrap.classList.remove('open');
+        });
+        if (exceptWrap !== state.searchWrap) {
+          clearWorkspaceThreeSearch(state);
+        }
+      }
+
       state.minBtn?.addEventListener('click', (event) => {
         event.stopPropagation();
         if (state.closed) return;
@@ -3576,6 +3592,8 @@
       state.historyToggle?.addEventListener('click', (event) => {
         event.stopPropagation();
         if (state.closed) return;
+        const willOpen = !state.historyWrap.classList.contains('open');
+        closeWorkspaceThreeActionMenus(willOpen ? state.historyWrap : null);
         refreshWorkspaceThreeHistoryMenu(state);
         state.historyWrap.classList.toggle('open');
       });
@@ -3593,6 +3611,8 @@
       state.searchToggle?.addEventListener('click', (event) => {
         event.stopPropagation();
         if (state.closed) return;
+        const willOpen = !state.searchWrap.classList.contains('open');
+        closeWorkspaceThreeActionMenus(willOpen ? state.searchWrap : null);
         const open = state.searchWrap.classList.toggle('open');
         if (open) state.searchInput.focus();
         else clearWorkspaceThreeSearch(state);
@@ -3623,6 +3643,8 @@
       state.shareToggle?.addEventListener('click', (event) => {
         event.stopPropagation();
         if (state.closed) return;
+        const willOpen = !state.shareWrap.classList.contains('open');
+        closeWorkspaceThreeActionMenus(willOpen ? state.shareWrap : null);
         state.shareWrap.classList.toggle('open');
       });
       state.shareMenu?.addEventListener('click', (event) => {
@@ -4648,6 +4670,8 @@
 
         attachToggle.addEventListener('click', (event) => {
           event.stopPropagation();
+          const willOpen = !attachWrap.classList.contains('open');
+          closePanelActionMenus(willOpen ? attachWrap : null);
           attachWrap.classList.toggle('open');
         });
         attachFileBtn.addEventListener('click', (event) => {
@@ -4687,8 +4711,19 @@
         const historyWrap = panel.querySelector('.panel-history');
         const historyToggle = panel.querySelector('.history-toggle');
         const historyMenu = panel.querySelector('.history-menu');
+        function closePanelActionMenus(exceptWrap) {
+          [attachWrap, historyWrap, pinsWrap, modeWrap, searchWrap, shareWrap, consoleWrap].forEach(wrap => {
+            if (!wrap || wrap === exceptWrap) return;
+            wrap.classList.remove('open');
+          });
+          if (exceptWrap !== searchWrap) {
+            clearActiveSearchHighlight();
+          }
+        }
         historyToggle.addEventListener('click', (event) => {
           event.stopPropagation();
+          const willOpen = !historyWrap.classList.contains('open');
+          closePanelActionMenus(willOpen ? historyWrap : null);
           historyWrap.classList.toggle('open');
         });
         historyMenu.addEventListener('click', (event) => {
@@ -4706,6 +4741,8 @@
         const pinsMenu = panel.querySelector('.pins-menu');
         pinsToggle.addEventListener('click', (event) => {
           event.stopPropagation();
+          const willOpen = !pinsWrap.classList.contains('open');
+          closePanelActionMenus(willOpen ? pinsWrap : null);
           pinsWrap.classList.toggle('open');
         });
         pinsMenu.addEventListener('click', (event) => {
@@ -4922,6 +4959,8 @@
         if (modeWrap && modeToggle && modeMenu) {
           modeToggle.addEventListener('click', (event) => {
             event.stopPropagation();
+            const willOpen = !modeWrap.classList.contains('open');
+            closePanelActionMenus(willOpen ? modeWrap : null);
             modeWrap.classList.toggle('open');
           });
           modeMenu.addEventListener('click', (event) => {
@@ -4995,6 +5034,8 @@
 
         searchToggle.addEventListener('click', (event) => {
           event.stopPropagation();
+          const willOpen = !searchWrap.classList.contains('open');
+          closePanelActionMenus(willOpen ? searchWrap : null);
           const open = searchWrap.classList.toggle('open');
           if (open) searchInputEl.focus();
           else clearActiveSearchHighlight();
@@ -5028,6 +5069,8 @@
         const shareMenu = panel.querySelector('.share-menu');
         shareToggle.addEventListener('click', (event) => {
           event.stopPropagation();
+          const willOpen = !shareWrap.classList.contains('open');
+          closePanelActionMenus(willOpen ? shareWrap : null);
           shareWrap.classList.toggle('open');
         });
         shareMenu.addEventListener('click', (event) => {
@@ -5059,6 +5102,8 @@
         const consoleMenu = panel.querySelector('.console-menu');
         consoleToggle.addEventListener('click', (event) => {
           event.stopPropagation();
+          const willOpen = !consoleWrap.classList.contains('open');
+          closePanelActionMenus(willOpen ? consoleWrap : null);
           consoleWrap.classList.toggle('open');
         });
         consoleMenu.addEventListener('click', async (event) => {
