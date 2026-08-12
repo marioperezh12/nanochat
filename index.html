@@ -1168,7 +1168,14 @@
       box-shadow: 0 0 0 2px rgba(91, 255, 106, 0.15);
     }
 
+    .chat-panel.blinked {
+      border-color: #5bff6a;
+      animation: blinkBorderPulse 0.9s ease-in-out 1;
+    }
+
     .chat-panel.blinked .panel-dot {
+      background: #5bff6a;
+      box-shadow: 0 0 0 2px rgba(91, 255, 106, 0.18);
       animation: blinkPulse 0.9s ease-in-out 1;
     }
 
@@ -2396,6 +2403,35 @@
       }
     }
 
+    @keyframes blinkBorderPulse {
+
+      0%,
+      100% {
+        border-color: #5bff6a;
+        box-shadow: 0 0 0 0 rgba(91, 255, 106, 0.38);
+      }
+
+      20% {
+        border-color: rgba(91, 255, 106, 0.18);
+        box-shadow: 0 0 0 2px rgba(91, 255, 106, 0.08);
+      }
+
+      40% {
+        border-color: #5bff6a;
+        box-shadow: 0 0 0 4px rgba(91, 255, 106, 0.22);
+      }
+
+      60% {
+        border-color: rgba(91, 255, 106, 0.22);
+        box-shadow: 0 0 0 1px rgba(91, 255, 106, 0.1);
+      }
+
+      80% {
+        border-color: #5bff6a;
+        box-shadow: 0 0 0 3px rgba(91, 255, 106, 0.16);
+      }
+    }
+
     @media (max-width: 1024px) {
       .app {
         grid-template-rows: var(--topbar-height) 1fr var(--bottom-height);
@@ -2584,6 +2620,7 @@
         <div class="section-head">
           <h1>Workspace Three</h1>
           <div class="section-head-actions">
+            <button type="button" class="settings-toggle" id="workspaceThreeCloseBtn" title="Cerrar Workspace Three">×</button>
             <button type="button" class="settings-toggle" id="workspaceThreeMaxBtn" title="Maximizar Workspace Three">□</button>
             <button type="button" class="settings-toggle" id="panzoomZoomOutBtn" title="Alejar">-</button>
             <button type="button" class="settings-toggle" id="panzoomResetBtn" title="Reiniciar">⟲</button>
@@ -2713,12 +2750,19 @@
                 <button type="button" class="settings-item columns-item" data-cols="3">3 Columnas</button>
               </div>
             </div>
-            <button type="button" class="settings-toggle" id="workspaceFavToggle" title="Favorito">&#9733;</button>
-            <div class="workspace-settings" id="workspaceModeWrap">
-              <button type="button" class="settings-toggle" id="workspaceSettingsToggle"
-                title="Opciones">&#9881;</button>
-              <div class="settings-menu" id="workspaceModeMenu"></div>
+            <div class="workspace-settings" id="favoritesWrap">
+              <button type="button" class="settings-toggle" id="favoritesToggle" title="Favoritos">&#9733;</button>
+              <div class="settings-menu" id="favoritesMenu"></div>
             </div>
+            <div class="workspace-settings" id="workspaceSettings">
+              <button type="button" class="settings-toggle" id="settingsToggle" title="Opciones">&#9881;</button>
+              <div class="settings-menu">
+                <button type="button" class="settings-item" id="setKeyMenuItem">Establecer API key</button>
+                <button type="button" class="settings-item" id="importChatMenuItem">Importar chat</button>
+                <button type="button" class="settings-item" id="privacyMenuItem">Configurar privacidad</button>
+              </div>
+            </div>
+           
           </div>
         </div>
         <section id="chatGrid" class="chat-grid"></section>
@@ -2816,6 +2860,7 @@
     const workspaceSettingsToggle = document.getElementById('workspaceSettingsToggle');
     const workspaceModeMenu = document.getElementById('workspaceModeMenu');
     const workspaceThreeSection = document.getElementById('workspaceThreeSection');
+    const workspaceThreeCloseBtn = document.getElementById('workspaceThreeCloseBtn');
     const workspaceThreeStage = document.getElementById('workspaceThreeStage');
     const workspaceThreeCanvas = document.getElementById('workspaceThreeCanvas');
     const workspaceThreeChat = document.getElementById('workspaceThreeChat');
@@ -3437,7 +3482,7 @@
         closing: false,
         deleted: false,
         focused: true,
-        blinked: false,
+        blinked: true,
         messages: [],
         attachment: null,
         editingIndex: null,
@@ -3461,10 +3506,15 @@
         hasBranches: false
       };
       chatState.forEach(item => { item.focused = false; });
-      chatState.push(chat);
+      chatState.unshift(chat);
+      syncChatPositions();
       saveChatToStorage(chat);
       saveChatOrder();
       renderChats();
+      setTimeout(() => {
+        chat.blinked = false;
+        renderChats();
+      }, 900);
     }
 
     function buildPinnedShareText(messages, pinnedIndices, chatName, responseMode) {
@@ -6492,6 +6542,10 @@
               <button type="button" class="fav-toggle${chat.favorite ? ' active' : ''}" title="${chat.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}">&#9733;</button>
               <button type="button" class="key-toggle${chat.isPrivate ? ' active' : ''}" title="${chat.isPrivate ? 'Chat privado' : 'Proteger chat con contraseña'}">&#128274;</button>
               <button type="button" class="temporal-toggle${chat.temporalMode ? ' active' : ''}" title="${chat.temporalMode ? 'Desactivar modo temporal' : 'Activar modo temporal (mensajes que se autoeliminan en 1 minuto)'}">&#9202;</button>
+              <div class="mode-select">
+                <button type="button" class="mode-toggle" title="Opciones (${modeLabel})">&#9881;</button>
+                <div class="mode-menu">${modeMenuItems}</div>
+              </div>
               <div class="panel-pins">
                 <button type="button" class="pins-toggle" title="Mensajes anclados">&#128204;</button>
                 <div class="pins-menu">${pinsMenuHtml}</div>
@@ -7938,14 +7992,20 @@
       columnsWrap.classList.remove('open');
       renderChats();
     });
-    if (workspaceFavToggle) {
-      workspaceFavToggle.addEventListener('click', (event) => {
+    if (favoritesToggle && favoritesWrap && favoritesMenu) {
+      favoritesToggle.addEventListener('click', (event) => {
         event.stopPropagation();
-        const chat = chatState.find(item => item.focused && !item.deleted);
-        if (!chat) return;
-        chat.favorite = !chat.favorite;
-        saveChatToStorage(chat);
-        renderChats();
+        renderFavoritesMenu();
+        favoritesWrap.classList.toggle('open');
+      });
+      favoritesMenu.addEventListener('click', (event) => {
+        const item = event.target.closest('.settings-item');
+        if (!item) return;
+        event.stopPropagation();
+        const chatId = item.getAttribute('data-chat-id');
+        if (!chatId) return;
+        favoritesWrap.classList.remove('open');
+        bringChatToFront(chatId);
       });
     }
     function renderWorkspaceModeMenu() {
@@ -7994,6 +8054,11 @@
     if (workspaceThreeMaxBtn) {
       workspaceThreeMaxBtn.addEventListener('click', () => {
         setWorkspaceThreeMaximized(!workspaceThreeMaximized);
+      });
+    }
+    if (workspaceThreeCloseBtn) {
+      workspaceThreeCloseBtn.addEventListener('click', () => {
+        setWorkspaceThreeActiveChat(null);
       });
     }
     if (newChatMenuItem) {
