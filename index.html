@@ -2881,9 +2881,11 @@
     const CHAT_ORDER_STORAGE = 'nanochat_order';
     const GRID_COLUMNS_STORAGE = 'nanochat_grid_columns';
     const SIDEBAR_WIDTH_STORAGE = 'nanochat_sidebar_width';
+    const WORKSPACE_THREE_STORAGE = 'nanochat_workspace_three';
     const TEMPORAL_MESSAGE_TTL = 120000;
     const PRIVACY_PASSWORD_STORAGE = 'nanochat_privacy_password';
     const CRYPTO_SALT = 'nanochat-local-salt-v1';
+    let restoringWorkspaceThree = false;
 
     async function deriveUserCryptoKey(sub) {
       if (!sub || !window.crypto || !window.crypto.subtle) return null;
@@ -2963,6 +2965,165 @@
       return STORAGE_PREFIX + name;
     }
 
+    function getChatByName(name) {
+      if (!name) return null;
+      return chatState.find(chat => chat.name === name) || null;
+    }
+
+    function syncWorkspaceThreeOwnerState(state) {
+      if (!state) return;
+      const ownerFromId = state.ownerChatId ? chatState.find(chat => chat.id === state.ownerChatId) : null;
+      const ownerFromName = state.ownerChatName ? getChatByName(state.ownerChatName) : null;
+      const ownerChat = ownerFromName || ownerFromId || null;
+      state.ownerChatId = ownerChat ? ownerChat.id : null;
+      state.ownerChatName = ownerChat ? ownerChat.name : (state.ownerChatName || null);
+    }
+
+    function getWorkspaceThreeOwnerChatName(state) {
+      syncWorkspaceThreeOwnerState(state);
+      return state?.ownerChatName || null;
+    }
+
+    function syncWorkspaceThreeBranchFlags() {
+      const ownerNames = new Set(
+        workspaceThreeMiniChats
+          .map(state => getWorkspaceThreeOwnerChatName(state))
+          .filter(Boolean)
+      );
+      chatState.forEach(chat => {
+        chat.hasBranches = ownerNames.has(chat.name);
+      });
+    }
+
+    function serializeWorkspaceThreeMessage(message) {
+      if (!message) return null;
+      const expiresAt = Number(message.expiresAt);
+      return {
+        role: message.role || 'assistant',
+        text: String(message.text || ''),
+        display: message.display || null,
+        expiresAt: Number.isFinite(expiresAt) && expiresAt > Date.now() ? expiresAt : null
+      };
+    }
+
+    function serializeWorkspaceThreeMiniChat(state) {
+      syncWorkspaceThreeOwnerState(state);
+      const x = Number(state.element?.dataset?.x || 0);
+      const y = Number(state.element?.dataset?.y || 0);
+      return {
+        id: state.id,
+        name: state.name || state.titleStrong?.textContent || 'Workspace Three',
+        title: state.titleStrong?.textContent || state.name || 'Workspace Three',
+        subtitle: state.titleSpan?.textContent || '',
+        assistantPrefix: state.assistantPrefix || '',
+        x: Number.isFinite(x) ? x : 0,
+        y: Number.isFinite(y) ? y : 0,
+        inputPlaceholder: state.input?.placeholder || 'Escribe un mensaje...',
+        favorite: Boolean(state.favorite),
+        isPrivate: Boolean(state.isPrivate),
+        temporalMode: Boolean(state.temporalMode),
+        minimized: Boolean(state.minimized),
+        maximized: Boolean(state.maximized),
+        closed: Boolean(state.closed),
+        ownerChatName: state.ownerChatName || null,
+        contextMessage: state.contextMessage && state.contextMessage.rawText
+          ? {
+            rawText: state.contextMessage.rawText,
+            display: state.contextMessage.display || formatWorkspaceThreeContextHtml(state.contextMessage.rawText)
+          }
+          : null,
+        messages: state.messages
+          .map(serializeWorkspaceThreeMessage)
+          .filter(Boolean),
+        nextMessageId: Number(state.nextMessageId) || 0
+      };
+    }
+
+    function saveWorkspaceThreeToStorage() {
+      if (restoringWorkspaceThree) return;
+      try {
+        if (!workspaceThreeMiniChats.length) {
+          localStorage.removeItem(WORKSPACE_THREE_STORAGE);
+          return;
+        }
+        const activeChat = activeWorkspaceThreeChatId
+          ? chatState.find(chat => chat.id === activeWorkspaceThreeChatId)
+          : null;
+        const payload = {
+          visible: Boolean(workspaceThreeVisible),
+          maximized: Boolean(workspaceThreeMaximized),
+          activeOwnerChatName: activeChat ? activeChat.name : null,
+          chats: workspaceThreeMiniChats.map(serializeWorkspaceThreeMiniChat),
+          connections: workspaceThreeConnections
+            .map(connection => ({
+              sourceId: connection?._workspaceThreeSourceState?.id || null,
+              targetId: connection?._workspaceThreeTargetState?.id || null
+            }))
+            .filter(connection => connection.sourceId && connection.targetId)
+        };
+        localStorage.setItem(WORKSPACE_THREE_STORAGE, JSON.stringify(payload));
+      } catch (error) { }
+    }
+
+    function loadWorkspaceThreeFromStorage() {
+      try {
+        const raw = localStorage.getItem(WORKSPACE_THREE_STORAGE);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (!parsed || !Array.isArray(parsed.chats)) return null;
+        return parsed;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function updateWorkspaceThreeOwnerName(oldName, newName) {
+      if (!oldName || !newName || oldName === newName) return;
+      workspaceThreeMiniChats.forEach(state => {
+        if (state.ownerChatName !== oldName) return;
+        state.ownerChatName = newName;
+        const currentTitle = state.titleStrong?.textContent || '';
+        const currentSubtitle = state.titleSpan?.textContent || '';
+        if (currentTitle === 'Ramas de ' + oldName && state.titleStrong) {
+          state.titleStrong.textContent = 'Ramas de ' + newName;
+        }
+        if (currentSubtitle === oldName && state.titleSpan) {
+          state.titleSpan.textContent = newName;
+        }
+        if (state.name === 'Ramas de ' + oldName) {
+          state.name = 'Ramas de ' + newName;
+        }
+      });
+      syncWorkspaceThreeBranchFlags();
+      saveWorkspaceThreeToStorage();
+    }
+
+    function removeWorkspaceThreeBranchesForOwner(ownerName) {
+      if (!ownerName) return;
+      const branchStates = workspaceThreeMiniChats.filter(state => state.ownerChatName === ownerName);
+      if (!branchStates.length) return;
+      branchStates.forEach(state => {
+        disconnectWorkspaceThreeState(state);
+        if (state.element?.parentNode) {
+          state.element.parentNode.removeChild(state.element);
+        }
+        const index = workspaceThreeMiniChats.indexOf(state);
+        if (index !== -1) workspaceThreeMiniChats.splice(index, 1);
+      });
+      const activeChat = activeWorkspaceThreeChatId
+        ? chatState.find(chat => chat.id === activeWorkspaceThreeChatId)
+        : null;
+      if (activeChat && activeChat.name === ownerName) {
+        activeWorkspaceThreeChatId = null;
+        workspaceThreeVisible = false;
+        if (workspaceThreeMaximized) {
+          setWorkspaceThreeMaximized(false);
+        }
+      }
+      syncWorkspaceThreeBranchFlags();
+      refreshWorkspaceThreeConnection();
+      saveWorkspaceThreeToStorage();
+    }
+
     async function saveChatToStorage(chat) {
       try {
         if (chat.isPrivate) {
@@ -2983,6 +3144,7 @@
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
+              hasBranches: Boolean(chat.hasBranches),
               isPrivate: true
             }));
             return;
@@ -2991,21 +3153,22 @@
           if (!key) return;
           const plaintext = JSON.stringify(chat.messages.filter(message => !message.typing));
           const encryptedMessages = await encryptWithKey(key, plaintext);
-          localStorage.setItem(storageKey(chat.name), JSON.stringify({
-            name: chat.name,
-            encryptedMessages,
-            pinnedIndices: Array.isArray(chat.pinnedIndices) ? chat.pinnedIndices : [],
-            expandedIndices: Array.isArray(chat.expandedIndices) ? chat.expandedIndices : [],
+            localStorage.setItem(storageKey(chat.name), JSON.stringify({
+              name: chat.name,
+              encryptedMessages,
+              pinnedIndices: Array.isArray(chat.pinnedIndices) ? chat.pinnedIndices : [],
+              expandedIndices: Array.isArray(chat.expandedIndices) ? chat.expandedIndices : [],
             favorite: Boolean(chat.favorite),
             revealedOlderCount: Number(chat.revealedOlderCount) || 0,
             versions: Array.isArray(chat.versions) ? chat.versions : [],
             currentSourceLabel: chat.currentSourceLabel || null,
-            contextMessage: chat.contextMessage || null,
-            positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
-            docked: Boolean(chat.docked),
-            temporalMode: Boolean(chat.temporalMode),
-            isPrivate: true
-          }));
+              contextMessage: chat.contextMessage || null,
+              positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
+              docked: Boolean(chat.docked),
+              temporalMode: Boolean(chat.temporalMode),
+              hasBranches: Boolean(chat.hasBranches),
+              isPrivate: true
+            }));
           return;
         }
         localStorage.setItem(storageKey(chat.name), JSON.stringify({
@@ -3021,6 +3184,7 @@
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
           temporalMode: Boolean(chat.temporalMode),
+          hasBranches: Boolean(chat.hasBranches),
           isPrivate: false
         }));
       } catch (error) { }
@@ -3084,6 +3248,7 @@
           if (key && key.startsWith(STORAGE_PREFIX)) keys.push(key);
         }
         keys.forEach(key => localStorage.removeItem(key));
+        localStorage.removeItem(WORKSPACE_THREE_STORAGE);
       } catch (error) { }
     }
 
@@ -3272,7 +3437,8 @@
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
-        temporalMode: false
+        temporalMode: false,
+        hasBranches: false
       };
       chatState.forEach(item => { item.focused = false; });
       chatState.push(chat);
@@ -3354,17 +3520,23 @@
 
     function setWorkspaceThreeActiveChat(chatId) {
       if (chatId) {
+        const ownerChat = chatState.find(chat => chat.id === chatId) || null;
         const hasOwnedNodes = workspaceThreeMiniChats.some(state => state.ownerChatId === chatId);
         if (!hasOwnedNodes) {
           workspaceThreeMiniChats.forEach(state => {
-            if (!state.ownerChatId) state.ownerChatId = chatId;
+            if (!state.ownerChatId) {
+              state.ownerChatId = chatId;
+              state.ownerChatName = ownerChat ? ownerChat.name : (state.ownerChatName || null);
+            }
           });
           workspaceThreeConnections.forEach(connection => {
             if (connection?._workspaceThreeSourceState && !connection._workspaceThreeSourceState.ownerChatId) {
               connection._workspaceThreeSourceState.ownerChatId = chatId;
+              connection._workspaceThreeSourceState.ownerChatName = ownerChat ? ownerChat.name : (connection._workspaceThreeSourceState.ownerChatName || null);
             }
             if (connection?._workspaceThreeTargetState && !connection._workspaceThreeTargetState.ownerChatId) {
               connection._workspaceThreeTargetState.ownerChatId = chatId;
+              connection._workspaceThreeTargetState.ownerChatName = ownerChat ? ownerChat.name : (connection._workspaceThreeTargetState.ownerChatName || null);
             }
           });
         }
@@ -3376,6 +3548,7 @@
       }
       refreshWorkspaceThreeConnection();
       renderChats();
+      saveWorkspaceThreeToStorage();
     }
 
     function toggleWorkspaceThreeForChat(chatId) {
@@ -3439,6 +3612,7 @@
         state.searchMatchIds = state.searchMatchIds.filter(id => id !== messageId);
         state.searchCurrent = state.searchMatchIds.length ? Math.min(state.searchCurrent, state.searchMatchIds.length - 1) : -1;
       }
+      saveWorkspaceThreeToStorage();
     }
 
     function scheduleWorkspaceThreeMessageExpiration(state, message) {
@@ -3588,6 +3762,7 @@
       renderWorkspaceThreeContextMessage(state);
       refreshWorkspaceThreeHistoryMenu(state);
       refreshWorkspaceThreeConnection();
+      saveWorkspaceThreeToStorage();
     }
 
     function addWorkspaceThreeMessage(state, role, text, options) {
@@ -3614,15 +3789,66 @@
       return message;
     }
 
-    function sendWorkspaceThreeMiniChatMessage(state, assistantPrefix) {
-      if (state.closed || state.isPrivate && !state.unlocked) return;
+    function updateWorkspaceThreeMessage(state, message, text, options) {
+      if (!state || !message) return;
+      const settings = options || {};
+      message.text = text;
+      message.display = settings.htmlContent || null;
+      if (message.el) {
+        if (settings.htmlContent) message.el.innerHTML = settings.htmlContent;
+        else message.el.textContent = text;
+      }
+      if (message.timerId) {
+        clearTimeout(message.timerId);
+        message.timerId = null;
+      }
+      message.expiresAt = settings.expiresAt || null;
+      if (message.expiresAt) scheduleWorkspaceThreeMessageExpiration(state, message);
+    }
+
+    async function sendWorkspaceThreeMiniChatMessage(state) {
+      if (state.closed || state.isPrivate && !state.unlocked || state.sending) return;
       const text = state.input.value.trim();
       if (!text) return;
       const expiresAt = state.temporalMode ? Date.now() + TEMPORAL_MESSAGE_TTL : null;
       addWorkspaceThreeMessage(state, 'user', text, { expiresAt });
-      addWorkspaceThreeMessage(state, 'assistant', assistantPrefix + text, { expiresAt });
       state.input.value = '';
       state.body.scrollTop = state.body.scrollHeight;
+      state.sending = true;
+
+      const engineName = engineLabel(selectedEngine);
+      const activeKey = getEngineKey(selectedEngine);
+      if (!activeKey) {
+        addWorkspaceThreeMessage(state, 'assistant', 'Conecta tu API key de ' + engineName + ' para responder.', { expiresAt });
+        state.sending = false;
+        saveWorkspaceThreeToStorage();
+        return;
+      }
+
+      const engineMessages = state.messages
+        .filter(message => !isTemporalMessageExpired(message))
+        .map(message => ({ role: message.role, content: message.text }));
+      if (state.contextMessage && state.contextMessage.rawText) {
+        engineMessages.unshift({ role: 'user', content: '[Contexto]: ' + state.contextMessage.rawText });
+      }
+
+      const typingMessage = addWorkspaceThreeMessage(state, 'assistant', 'Escribiendo...');
+      state.body.scrollTop = state.body.scrollHeight;
+
+      try {
+        const reply = await callSelectedEngine(engineMessages, activeKey);
+        updateWorkspaceThreeMessage(state, typingMessage, reply, {
+          htmlContent: formatMarkdown(reply),
+          expiresAt
+        });
+      } catch (error) {
+        const errorText = error && error.message ? error.message : ('No se pudo conectar con ' + engineName + '.');
+        updateWorkspaceThreeMessage(state, typingMessage, errorText, { expiresAt });
+      } finally {
+        state.sending = false;
+        state.body.scrollTop = state.body.scrollHeight;
+        saveWorkspaceThreeToStorage();
+      }
     }
 
     function toggleWorkspaceThreeMaximized(state) {
@@ -3681,11 +3907,13 @@
         maximized: false,
         closed: false,
         ownerChatId: config.ownerChatId || null,
+        ownerChatName: config.ownerChatName || null,
         contextMessage: config.contextMessage || null,
         connections: [],
         searchMatchIds: [],
         searchCurrent: -1,
-        searchHighlightedEl: null
+        searchHighlightedEl: null,
+        sending: false
       };
 
       if (config.title) state.titleStrong.textContent = config.title;
@@ -3843,12 +4071,12 @@
       state.input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
-          sendWorkspaceThreeMiniChatMessage(state, state.assistantPrefix);
+          sendWorkspaceThreeMiniChatMessage(state);
         }
       });
       state.sendBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        sendWorkspaceThreeMiniChatMessage(state, state.assistantPrefix);
+        sendWorkspaceThreeMiniChatMessage(state);
       });
       state.element.querySelectorAll('button, input, textarea').forEach(control => {
         control.addEventListener('pointerdown', (event) => event.stopPropagation());
@@ -3959,6 +4187,7 @@
         input: article.querySelector('.chat-message-input'),
         sendBtn: article.querySelector('button[id$="-send"]'),
         ownerChatId: options.ownerChatId || null,
+        ownerChatName: options.ownerChatName || null,
         contextMessage: options.contextMessage || null,
         inputPlaceholder: options.inputPlaceholder || 'Escribe un mensaje...'
       });
@@ -3989,7 +4218,76 @@
       sourceState.connections.push(connection);
       targetState.connections.push(connection);
       refreshWorkspaceThreeConnection();
+      saveWorkspaceThreeToStorage();
       return connection;
+    }
+
+    function restoreWorkspaceThreeFromStorage() {
+      const saved = loadWorkspaceThreeFromStorage();
+      if (!saved || !Array.isArray(saved.chats) || !saved.chats.length) {
+        syncWorkspaceThreeBranchFlags();
+        chatState.forEach(saveChatToStorage);
+        renderChats();
+        return;
+      }
+
+      restoringWorkspaceThree = true;
+      const restoredById = new Map();
+      saved.chats.forEach(item => {
+        const ownerChat = item.ownerChatName ? getChatByName(item.ownerChatName) : null;
+        const state = createWorkspaceThreeMiniChatNode({
+          id: item.id,
+          name: item.name || item.title || 'Workspace Three',
+          title: item.title || item.name || 'Workspace Three',
+          subtitle: item.subtitle || 'Rama',
+          assistantPrefix: item.assistantPrefix || ((item.title || item.name || 'Workspace Three') + ' recibió: '),
+          ownerChatId: ownerChat ? ownerChat.id : null,
+          ownerChatName: item.ownerChatName || (ownerChat ? ownerChat.name : null),
+          x: Number.isFinite(Number(item.x)) ? Number(item.x) : 180,
+          y: Number.isFinite(Number(item.y)) ? Number(item.y) : 140,
+          inputPlaceholder: item.inputPlaceholder || 'Escribe un mensaje...',
+          contextMessage: item.contextMessage || null,
+          seedMessages: []
+        });
+        if (!state) return;
+        state.favorite = Boolean(item.favorite);
+        state.isPrivate = Boolean(item.isPrivate);
+        state.unlocked = false;
+        state.temporalMode = Boolean(item.temporalMode);
+        state.minimized = Boolean(item.minimized);
+        state.maximized = Boolean(item.maximized);
+        state.closed = Boolean(item.closed);
+        state.nextMessageId = 0;
+        (Array.isArray(item.messages) ? item.messages : []).forEach(message => {
+          addWorkspaceThreeMessage(state, message.role || 'assistant', message.text || '', {
+            htmlContent: message.display || null,
+            expiresAt: message.expiresAt || null
+          });
+        });
+        state.nextMessageId = Math.max(state.nextMessageId, Number(item.nextMessageId) || 0);
+        renderWorkspaceThreeMiniChat(state);
+        restoredById.set(state.id, state);
+      });
+      (Array.isArray(saved.connections) ? saved.connections : []).forEach(connection => {
+        const sourceState = restoredById.get(connection.sourceId);
+        const targetState = restoredById.get(connection.targetId);
+        if (sourceState && targetState) {
+          connectWorkspaceThreeNodes(sourceState, targetState);
+        }
+      });
+      restoringWorkspaceThree = false;
+
+      syncWorkspaceThreeBranchFlags();
+      chatState.forEach(saveChatToStorage);
+      const activeOwnerChat = saved.activeOwnerChatName ? getChatByName(saved.activeOwnerChatName) : null;
+      if (saved.visible && activeOwnerChat) {
+        setWorkspaceThreeActiveChat(activeOwnerChat.id);
+      } else {
+        setWorkspaceThreeActiveChat(null);
+      }
+      setWorkspaceThreeMaximized(Boolean(saved.maximized));
+      saveWorkspaceThreeToStorage();
+      renderChats();
     }
 
     function generateVersionId() {
@@ -4037,6 +4335,19 @@
           return label + ': ' + raw;
         })
         .join('\n\n');
+    }
+
+    function extractWorkspaceThreeIntentLabel(stepText, index) {
+      const withoutCode = String(stepText || '').replace(/```[\s\S]*?```/g, ' ');
+      const lines = withoutCode
+        .split(/\r?\n/)
+        .map(line => line.replace(/^(\d+\.\s+|[-*]\s+)/, '').replace(/`/g, '').trim())
+        .filter(Boolean);
+      const candidate = lines[0]
+        ? lines[0].replace(/\s+/g, ' ').replace(/^paso\s+\d+\s*[:\-]?\s*/i, '').trim()
+        : '';
+      if (!candidate) return 'Paso ' + (index + 1);
+      return candidate.length > 44 ? candidate.slice(0, 41).trimEnd() + '...' : candidate;
     }
 
     function setTemporaryChatStatus(chat, text, timeoutMs = 3200) {
@@ -4185,6 +4496,7 @@
         title: 'Ramas de ' + chat.name,
         subtitle: 'Contexto base',
         ownerChatId: chat.id,
+        ownerChatName: chat.name,
         x: branchOrigin.x,
         y: parentY,
         assistantPrefix: 'Nodo padre recibió: ',
@@ -4346,6 +4658,7 @@
         title: 'Ramas de ' + chat.name,
         subtitle: 'Contexto base',
         ownerChatId: chat.id,
+        ownerChatName: chat.name,
         x: branchOrigin.x,
         y: parentY,
         assistantPrefix: 'Nodo padre recibió: ',
@@ -4368,6 +4681,10 @@
       }
 
       plan.steps.forEach((step, index) => {
+        const stepLabel = extractWorkspaceThreeIntentLabel(step, index);
+        const stepTitle = stepLabel === ('Paso ' + (index + 1))
+          ? stepLabel
+          : ('Paso ' + (index + 1) + ' - ' + stepLabel);
         const childContext = (plan.filterText ? ('Filtro aplicado:\n' + plan.filterText + '\n\n') : '')
           + 'Resumen base:\n'
           + plan.summary
@@ -4375,10 +4692,11 @@
           + ((index + 1) + '. ' + step);
         const childState = createWorkspaceThreeMiniChatNode({
           id: 'workspace-three-branch-child-' + Date.now() + '-' + index,
-          name: 'Paso ' + (index + 1),
-          title: 'Paso ' + (index + 1),
-          subtitle: chat.name,
+          name: stepTitle,
+          title: stepTitle,
+          subtitle: 'Paso ' + (index + 1),
           ownerChatId: chat.id,
+          ownerChatName: chat.name,
           x: childX,
           y: branchOrigin.y + (index * childSpacing),
           assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
@@ -4400,6 +4718,7 @@
 
       chat.statusMessage = null;
       chat.hasBranches = true;
+      saveChatToStorage(chat);
       setWorkspaceThreeActiveChat(chat.id);
       setTemporaryChatStatus(chat, 'Se crearon ' + plan.steps.length + ' ramas en Workspace Three.');
       workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -4623,7 +4942,8 @@
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
-        temporalMode: false
+        temporalMode: false,
+        hasBranches: false
       };
       chatState.forEach(item => { item.focused = false; item.flashHighlight = false; });
       chatState.unshift(chat);
@@ -4798,6 +5118,7 @@
         dragging = false;
         try { handle.releasePointerCapture(event.pointerId); } catch (error) { }
         refreshWorkspaceThreeConnection();
+        saveWorkspaceThreeToStorage();
       };
       handle.addEventListener('pointerup', stopDrag);
       handle.addEventListener('pointercancel', stopDrag);
@@ -4884,8 +5205,10 @@
         committed = true;
         const next = input.value.trim();
         if (next && next !== chat.name) {
-          removeChatFromStorage(chat.name);
+          const previousName = chat.name;
+          removeChatFromStorage(previousName);
           chat.name = next;
+          updateWorkspaceThreeOwnerName(previousName, next);
           saveChatToStorage(chat);
         }
         renderChats();
@@ -6024,7 +6347,8 @@
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
-        temporalMode: false
+        temporalMode: false,
+        hasBranches: false
       }));
       syncChatPositions();
       chatState.forEach(saveChatToStorage);
@@ -6079,7 +6403,8 @@
         statusMessage: null,
         consoleShowVersions: false,
         consoleShowDelete: false,
-        temporalMode: Boolean(item.temporalMode)
+        temporalMode: Boolean(item.temporalMode),
+        hasBranches: Boolean(item.hasBranches)
       }));
       dockedSaved.forEach(item => {
         const chat = chatState.find(entry => entry.name === item.name);
@@ -6142,6 +6467,7 @@
       renderChats();
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => {
+        removeWorkspaceThreeBranchesForOwner(chat.name);
         removeChatFromStorage(chat.name);
         chatState = chatState.filter(item => item.id !== id);
         if (chatState.length && !chatState.some(item => item.focused)) {
@@ -6543,6 +6869,7 @@
       requestAnimationFrame(() => {
         if (workspaceThreeJsPlumb) workspaceThreeJsPlumb.repaintEverything();
       });
+      saveWorkspaceThreeToStorage();
     }
     if (workspaceSettingsToggle && workspaceModeWrap && workspaceModeMenu) {
       workspaceSettingsToggle.addEventListener('click', (event) => {
@@ -6774,6 +7101,7 @@
       initWorkspaceThree();
       initWorkspaceThreeConnections();
       initChats();
+      restoreWorkspaceThreeFromStorage();
     }
 
     engineSelect.addEventListener('change', () => {
