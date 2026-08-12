@@ -3000,9 +3000,11 @@
       if (!message) return null;
       const expiresAt = Number(message.expiresAt);
       return {
+        id: Number.isFinite(Number(message.id)) ? Number(message.id) : null,
         role: message.role || 'assistant',
         text: String(message.text || ''),
         display: message.display || null,
+        isSummary: Boolean(message.isSummary),
         expiresAt: Number.isFinite(expiresAt) && expiresAt > Date.now() ? expiresAt : null
       };
     }
@@ -3028,6 +3030,10 @@
         closed: Boolean(state.closed),
         ownerChatName: state.ownerChatName || null,
         zIndex: Number(state.zIndex) || 1,
+        pinnedMessageIds: Array.isArray(state.pinnedMessageIds) ? state.pinnedMessageIds.slice() : [],
+        versions: Array.isArray(state.versions) ? state.versions : [],
+        viewingVersionId: state.viewingVersionId || null,
+        currentSourceLabel: state.currentSourceLabel || null,
         contextMessage: state.contextMessage && state.contextMessage.rawText
           ? {
             rawText: state.contextMessage.rawText,
@@ -3647,6 +3653,8 @@
         state.searchMatchIds = state.searchMatchIds.filter(id => id !== messageId);
         state.searchCurrent = state.searchMatchIds.length ? Math.min(state.searchCurrent, state.searchMatchIds.length - 1) : -1;
       }
+      state.pinnedMessageIds = state.pinnedMessageIds.filter(id => id !== messageId);
+      state.viewingVersionId = null;
       saveWorkspaceThreeToStorage();
     }
 
@@ -3801,25 +3809,40 @@
       saveWorkspaceThreeToStorage();
     }
 
+    function renderWorkspaceThreeMessageBubble(state, message) {
+      if (!state || !message?.el) return;
+      const displayHtml = message.display || formatMarkdown(message.text || '');
+      const isPinned = Array.isArray(state.pinnedMessageIds) && state.pinnedMessageIds.includes(message.id);
+      const pinBtn = '<button type="button" class="msg-pin' + (isPinned ? ' active' : '') + '" data-message-id="' + message.id + '" title="' + (isPinned ? 'Desanclar' : 'Anclar') + '">&#128204;</button>';
+      const copyBtn = '<button type="button" class="msg-copy" data-message-id="' + message.id + '" title="Copiar">&#128203;</button>';
+      const replicateBtn = '<button type="button" class="msg-replicate" data-message-id="' + message.id + '" title="Reutilizar en caja de mensaje">&#128229;</button>';
+      const deleteBtn = '<button type="button" class="msg-delete" data-message-id="' + message.id + '" title="Eliminar">&#128465;</button>';
+      message.el.classList.toggle('summary-message', Boolean(message.isSummary));
+      message.el.dataset.messageId = String(message.id);
+      message.el.innerHTML = '<div class="message-content">' + displayHtml + '</div><div class="message-actions">' + copyBtn + pinBtn + replicateBtn + deleteBtn + '</div>';
+    }
+
     function addWorkspaceThreeMessage(state, role, text, options) {
       if (!text) return null;
       const settings = options || {};
       const bubble = settings.existingEl || document.createElement('div');
       bubble.className = 'message ' + role + ' workspace-three-msg';
-      if (settings.htmlContent) bubble.innerHTML = settings.htmlContent;
-      else bubble.textContent = text;
       if (!settings.existingEl) state.body.appendChild(bubble);
+      const fixedId = Number(settings.messageId);
+      const messageId = Number.isFinite(fixedId) ? fixedId : Number(state.nextMessageId || 0);
       const message = {
-        id: state.nextMessageId++,
+        id: messageId,
         role,
         text,
         el: bubble,
         display: settings.htmlContent || null,
+        isSummary: Boolean(settings.isSummary),
         expiresAt: settings.expiresAt || null,
         timerId: null
       };
-      bubble.dataset.messageId = String(message.id);
+      state.nextMessageId = Math.max(Number(state.nextMessageId) || 0, messageId + 1);
       state.messages.push(message);
+      renderWorkspaceThreeMessageBubble(state, message);
       if (message.expiresAt) scheduleWorkspaceThreeMessageExpiration(state, message);
       refreshWorkspaceThreeHistoryMenu(state);
       return message;
@@ -3830,10 +3853,8 @@
       const settings = options || {};
       message.text = text;
       message.display = settings.htmlContent || null;
-      if (message.el) {
-        if (settings.htmlContent) message.el.innerHTML = settings.htmlContent;
-        else message.el.textContent = text;
-      }
+      if (typeof settings.isSummary !== 'undefined') message.isSummary = Boolean(settings.isSummary);
+      renderWorkspaceThreeMessageBubble(state, message);
       if (message.timerId) {
         clearTimeout(message.timerId);
         message.timerId = null;
@@ -3869,6 +3890,27 @@
         }
         return;
       }
+      if (/^\/resumen-anclados$/i.test(text)) {
+        state.input.value = '';
+        await handleWorkspaceThreeResumenCommand(state, 'anclados');
+        return;
+      }
+      if (/^\/resumen-general$/i.test(text)) {
+        state.input.value = '';
+        await handleWorkspaceThreeResumenCommand(state, 'general');
+        return;
+      }
+      if (/^\/chatsversion$/i.test(text)) {
+        state.input.value = '';
+        handleWorkspaceThreeVersionsCommand(state);
+        return;
+      }
+      if (/^\/eliminar$/i.test(text)) {
+        state.input.value = '';
+        handleWorkspaceThreeDeleteCommand(state);
+        return;
+      }
+      state.viewingVersionId = null;
       const expiresAt = state.temporalMode ? Date.now() + TEMPORAL_MESSAGE_TTL : null;
       addWorkspaceThreeMessage(state, 'user', text, { expiresAt });
       state.input.value = '';
@@ -3976,7 +4018,13 @@
         searchMatchIds: [],
         searchCurrent: -1,
         searchHighlightedEl: null,
-        sending: false
+        sending: false,
+        pinnedMessageIds: Array.isArray(config.pinnedMessageIds) ? config.pinnedMessageIds.slice() : [],
+        versions: Array.isArray(config.versions) ? config.versions : [],
+        viewingVersionId: config.viewingVersionId || null,
+        currentSourceLabel: config.currentSourceLabel || null,
+        consoleShowVersions: false,
+        consoleShowDelete: false
       };
       workspaceThreeZIndexCounter = Math.max(workspaceThreeZIndexCounter, state.zIndex);
 
@@ -4139,7 +4187,49 @@
         await runWorkspaceThreeConsoleCommand(state, item.getAttribute('data-command') || '');
       });
       state.body.addEventListener('click', (event) => {
+        const pinBtn = event.target.closest('.msg-pin');
+        const copyBtn = event.target.closest('.msg-copy');
+        const replicateBtn = event.target.closest('.msg-replicate');
+        const deleteBtn = event.target.closest('.msg-delete');
         const contextMessageEl = event.target.closest('.message.context-message');
+        if (pinBtn) {
+          event.stopPropagation();
+          const messageId = Number(pinBtn.getAttribute('data-message-id'));
+          const pos = state.pinnedMessageIds.indexOf(messageId);
+          if (pos === -1) state.pinnedMessageIds.push(messageId);
+          else state.pinnedMessageIds.splice(pos, 1);
+          state.messages.forEach(message => renderWorkspaceThreeMessageBubble(state, message));
+          saveWorkspaceThreeToStorage();
+          return;
+        }
+        if (copyBtn) {
+          event.stopPropagation();
+          const messageId = Number(copyBtn.getAttribute('data-message-id'));
+          const message = state.messages.find(entry => entry.id === messageId);
+          const text = message ? (message.text || '') : '';
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(() => { });
+          }
+          return;
+        }
+        if (replicateBtn) {
+          event.stopPropagation();
+          const messageId = Number(replicateBtn.getAttribute('data-message-id'));
+          const message = state.messages.find(entry => entry.id === messageId);
+          if (!message?.text) return;
+          state.input.value = message.text;
+          state.input.focus();
+          return;
+        }
+        if (deleteBtn) {
+          event.stopPropagation();
+          const messageId = Number(deleteBtn.getAttribute('data-message-id'));
+          removeWorkspaceThreeMessage(state, messageId);
+          state.pinnedMessageIds = state.pinnedMessageIds.filter(id => id !== messageId);
+          refreshWorkspaceThreeHistoryMenu(state);
+          saveWorkspaceThreeToStorage();
+          return;
+        }
         if (contextMessageEl && !event.target.closest('a')) {
           event.stopPropagation();
           contextMessageEl.classList.toggle('expanded');
@@ -4201,6 +4291,10 @@
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
       const consoleMenuHtml = ''
         + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume sólo los mensajes anclados de este chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación de este chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="chatsversion">/chatsversion<span class="console-item-desc">Carga una versión anterior guardada de este chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="eliminar">/eliminar<span class="console-item-desc">Elimina la conversación actual o una versión guardada</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas">/ramas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas desde este chat</span></button>';
       return '<div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">'
         + '<div class="panel-title-row">'
@@ -4283,6 +4377,10 @@
         zIndex: options.zIndex || null,
         ownerChatId: options.ownerChatId || null,
         ownerChatName: options.ownerChatName || null,
+        pinnedMessageIds: options.pinnedMessageIds || [],
+        versions: options.versions || [],
+        viewingVersionId: options.viewingVersionId || null,
+        currentSourceLabel: options.currentSourceLabel || null,
         contextMessage: options.contextMessage || null,
         inputPlaceholder: options.inputPlaceholder || 'Escribe un mensaje...'
       });
@@ -4342,6 +4440,10 @@
         x: Number.isFinite(Number(item.x)) ? Number(item.x) : 180,
         y: Number.isFinite(Number(item.y)) ? Number(item.y) : 140,
         inputPlaceholder: item.inputPlaceholder || 'Escribe un mensaje...',
+        pinnedMessageIds: Array.isArray(item.pinnedMessageIds) ? item.pinnedMessageIds : [],
+        versions: Array.isArray(item.versions) ? item.versions : [],
+        viewingVersionId: item.viewingVersionId || null,
+        currentSourceLabel: item.currentSourceLabel || null,
           contextMessage: item.contextMessage || null,
           seedMessages: []
         });
@@ -4356,7 +4458,9 @@
         state.nextMessageId = 0;
         (Array.isArray(item.messages) ? item.messages : []).forEach(message => {
           addWorkspaceThreeMessage(state, message.role || 'assistant', message.text || '', {
+            messageId: Number.isFinite(Number(message.id)) ? Number(message.id) : undefined,
             htmlContent: message.display || null,
+            isSummary: Boolean(message.isSummary),
             expiresAt: message.expiresAt || null
           });
         });
@@ -4679,6 +4783,236 @@
           return label + ': ' + raw;
         })
         .join('\n\n');
+    }
+
+    function getWorkspaceThreePinnedContextMessageIds(messages, pinnedMessageIds) {
+      const includedIndexes = new Set();
+      const pinnedIdSet = new Set(Array.isArray(pinnedMessageIds) ? pinnedMessageIds : []);
+      messages.forEach((message, index) => {
+        if (!message || !pinnedIdSet.has(message.id) || isTemporalMessageExpired(message)) return;
+        if (message.role === 'assistant') {
+          const prev = messages[index - 1];
+          if (prev && prev.role === 'user' && !isTemporalMessageExpired(prev)) includedIndexes.add(index - 1);
+          includedIndexes.add(index);
+          return;
+        }
+        includedIndexes.add(index);
+        const next = messages[index + 1];
+        if (next && next.role === 'assistant' && !isTemporalMessageExpired(next)) includedIndexes.add(index + 1);
+      });
+      return Array.from(includedIndexes).sort((a, b) => a - b).map(index => messages[index]?.id).filter(id => id != null);
+    }
+
+    function buildWorkspaceThreePinnedConversationText(messages, pinnedMessageIds) {
+      const includedIds = new Set(getWorkspaceThreePinnedContextMessageIds(messages, pinnedMessageIds));
+      return messages
+        .filter(message => includedIds.has(message.id) && !isTemporalMessageExpired(message))
+        .map(message => {
+          const raw = String(message.text || '').trim();
+          const label = message.role === 'user' ? 'Usuario' : 'Asistente';
+          return label + ': ' + raw;
+        })
+        .join('\n\n');
+    }
+
+    function clearWorkspaceThreeMessages(state) {
+      state.messages.forEach(message => {
+        if (message.timerId) clearTimeout(message.timerId);
+        if (message.el && message.el.parentNode) message.el.parentNode.removeChild(message.el);
+      });
+      state.messages = [];
+      state.nextMessageId = 0;
+      state.searchMatchIds = [];
+      state.searchCurrent = -1;
+      if (state.searchHighlightedEl) {
+        state.searchHighlightedEl.classList.remove('search-active');
+        state.searchHighlightedEl = null;
+      }
+    }
+
+    function getWorkspaceThreeMessagesData(state) {
+      return state.messages
+        .map(serializeWorkspaceThreeMessage)
+        .filter(Boolean);
+    }
+
+    function restoreWorkspaceThreeMessages(state, messagesData) {
+      clearWorkspaceThreeMessages(state);
+      (Array.isArray(messagesData) ? messagesData : []).forEach(message => {
+        addWorkspaceThreeMessage(state, message.role || 'assistant', message.text || '', {
+          messageId: Number.isFinite(Number(message.id)) ? Number(message.id) : undefined,
+          htmlContent: message.display || null,
+          isSummary: Boolean(message.isSummary),
+          expiresAt: message.expiresAt || null
+        });
+      });
+      refreshWorkspaceThreeHistoryMenu(state);
+      state.body.scrollTop = state.body.scrollHeight;
+    }
+
+    function createWorkspaceThreeVersionSnapshot(state) {
+      const chatVersions = Array.isArray(state.versions) ? state.versions : [];
+      const versionNumber = chatVersions.length + 1;
+      const newVersionLabel = 'chat_v' + String(versionNumber).padStart(3, '0');
+      const snapshot = {
+        id: generateVersionId(),
+        label: newVersionLabel,
+        createdAt: Date.now(),
+        messages: getWorkspaceThreeMessagesData(state),
+        pinnedMessageIds: Array.isArray(state.pinnedMessageIds) ? state.pinnedMessageIds.slice() : [],
+        sourceLabel: state.currentSourceLabel || null
+      };
+      state.versions = chatVersions;
+      state.versions.push(snapshot);
+      return snapshot;
+    }
+
+    function buildWorkspaceThreeVersionPrompt(state, includeCurrent) {
+      const orderedVersions = (Array.isArray(state.versions) ? state.versions.slice() : [])
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+      const entries = [];
+      const lines = [];
+      if (includeCurrent) {
+        lines.push('0. Conversación actual');
+        entries.push({ type: 'current', value: null });
+      }
+      orderedVersions.forEach((version, index) => {
+        const rowNumber = includeCurrent ? index + 1 : index + 1;
+        const lineage = version.sourceLabel ? (' [' + version.sourceLabel + ' -> ' + version.label + ']') : '';
+        lines.push(rowNumber + '. ' + version.label + lineage);
+        entries.push({ type: 'version', value: version });
+      });
+      return { entries, lines };
+    }
+
+    async function handleWorkspaceThreeResumenCommand(state, scope) {
+      const activeMessages = state.messages.filter(message => !isTemporalMessageExpired(message));
+      let transcript = '';
+      if (scope === 'general') {
+        if (!activeMessages.length) {
+          window.alert('No hay mensajes en este chat para resumir.');
+          return;
+        }
+        transcript = buildWorkspaceThreeConversationText(activeMessages);
+      } else {
+        const hasPinned = activeMessages.some(message => state.pinnedMessageIds.includes(message.id));
+        if (!hasPinned) {
+          window.alert('No hay mensajes anclados en este chat para resumir.');
+          return;
+        }
+        transcript = buildWorkspaceThreePinnedConversationText(activeMessages, state.pinnedMessageIds);
+      }
+      const engineName = engineLabel(selectedEngine);
+      const activeKey = getEngineKey(selectedEngine);
+      if (!activeKey) {
+        window.alert('Conecta tu API key de ' + engineName + ' para generar el resumen.');
+        return;
+      }
+      const previousPlaceholder = state.input.placeholder;
+      state.sending = true;
+      state.input.disabled = true;
+      state.sendBtn.disabled = true;
+      state.input.placeholder = 'Generando resumen...';
+      try {
+        const summaryInstruction = 'Resume la siguiente conversación siguiendo EXACTAMENTE esta plantilla de formato:\n\n'
+          + '[Párrafo breve de 1-2 frases con la intención general de la conversación, de qué se trata todo]\n\n'
+          + '- [Punto o paso 1, redactado como intención/acción directa, ej: "Instalar imagen de YOLOv5"]\n'
+          + '```\n[comando exacto si el punto 1 tiene uno, en su propia línea, nunca mezclado con el texto]\n```\n'
+          + '- [Punto o paso 2]\n'
+          + '```\n[comando del punto 2, si aplica]\n```\n\n'
+          + 'Reglas: cada bloque de comando va SIEMPRE en su propia línea encerrado entre triple backtick (```), nunca dentro de la misma línea del punto ni como texto plano. '
+          + 'Si un punto no tiene comando, omite el bloque para ese punto. '
+          + 'No uses el formato "Usuario: ..." ni "Asistente: ...". '
+          + 'No incluyas comentarios sobre lo que hizo el asistente si no aportan información nueva (por ejemplo, evita frases como "Asistente: proporciona el comando").\n\n'
+          + 'Conversación a resumir:\n\n';
+        const reply = await callSelectedEngine([
+          { role: 'user', content: summaryInstruction + transcript }
+        ], activeKey);
+        const snapshot = createWorkspaceThreeVersionSnapshot(state);
+        restoreWorkspaceThreeMessages(state, [{
+          role: 'assistant',
+          text: reply,
+          display: formatMarkdown(reply),
+          isSummary: true
+        }]);
+        state.pinnedMessageIds = [];
+        state.viewingVersionId = null;
+        state.currentSourceLabel = snapshot.label;
+        renderWorkspaceThreeMiniChat(state);
+        saveWorkspaceThreeToStorage();
+      } catch (error) {
+        window.alert('No se pudo generar el resumen: ' + (error && error.message ? error.message : 'error desconocido'));
+      } finally {
+        state.sending = false;
+        state.input.disabled = false;
+        state.sendBtn.disabled = false;
+        state.input.placeholder = previousPlaceholder;
+      }
+    }
+
+    function handleWorkspaceThreeVersionsCommand(state) {
+      const promptData = buildWorkspaceThreeVersionPrompt(state, false);
+      if (!promptData.entries.length) {
+        window.alert('No hay versiones guardadas en este chat.');
+        return;
+      }
+      const rawSelection = window.prompt(
+        'Selecciona una versión para cargar en este chat:\n\n' + promptData.lines.join('\n'),
+        '1'
+      );
+      if (rawSelection == null) return;
+      const entryIndex = Number(rawSelection) - 1;
+      const target = promptData.entries[entryIndex];
+      if (!target || target.type !== 'version' || !target.value) {
+        window.alert('Selección inválida.');
+        return;
+      }
+      const version = target.value;
+      const hasCurrentMessages = state.messages.some(message => !isTemporalMessageExpired(message));
+      if (hasCurrentMessages && !state.viewingVersionId) {
+        createWorkspaceThreeVersionSnapshot(state);
+      }
+      restoreWorkspaceThreeMessages(state, version.messages || []);
+      state.pinnedMessageIds = Array.isArray(version.pinnedMessageIds) ? version.pinnedMessageIds.slice() : [];
+      state.viewingVersionId = version.id || null;
+      state.currentSourceLabel = version.label || null;
+      renderWorkspaceThreeMiniChat(state);
+      saveWorkspaceThreeToStorage();
+    }
+
+    function handleWorkspaceThreeDeleteCommand(state) {
+      const promptData = buildWorkspaceThreeVersionPrompt(state, true);
+      if (!promptData.entries.length) {
+        window.alert('No hay conversación ni versiones disponibles para eliminar.');
+        return;
+      }
+      const rawSelection = window.prompt(
+        'Selecciona qué deseas eliminar:\n\n' + promptData.lines.join('\n'),
+        '0'
+      );
+      if (rawSelection == null) return;
+      const selection = Number(rawSelection);
+      const target = selection === 0 ? promptData.entries[0] : promptData.entries[selection];
+      if (!target) {
+        window.alert('Selección inválida.');
+        return;
+      }
+      if (target.type === 'current') {
+        if (!window.confirm('¿Eliminar permanentemente la conversación actual de este chat?')) return;
+        restoreWorkspaceThreeMessages(state, []);
+        state.pinnedMessageIds = [];
+        state.viewingVersionId = null;
+        state.currentSourceLabel = null;
+        renderWorkspaceThreeMiniChat(state);
+        saveWorkspaceThreeToStorage();
+        return;
+      }
+      const version = target.value;
+      if (!version) return;
+      if (!window.confirm('¿Eliminar permanentemente ' + (version.label || 'esta versión') + '?')) return;
+      state.versions = (Array.isArray(state.versions) ? state.versions : []).filter(item => item.id !== version.id);
+      if (state.viewingVersionId === version.id) state.viewingVersionId = null;
+      saveWorkspaceThreeToStorage();
     }
 
     async function buildBranchPlanFromWorkspaceThreeState(state, branchFilter = '') {
@@ -5133,6 +5467,14 @@
     async function runWorkspaceThreeConsoleCommand(state, command) {
       if (command === 'contexto') {
         handleWorkspaceThreeContextoCommand(state);
+      } else if (command === 'resumen-anclados') {
+        await handleWorkspaceThreeResumenCommand(state, 'anclados');
+      } else if (command === 'resumen-general') {
+        await handleWorkspaceThreeResumenCommand(state, 'general');
+      } else if (command === 'chatsversion') {
+        handleWorkspaceThreeVersionsCommand(state);
+      } else if (command === 'eliminar') {
+        handleWorkspaceThreeDeleteCommand(state);
       } else if (command === 'ramas') {
         handleWorkspaceThreeRamasCommandShortcut(state);
       }
