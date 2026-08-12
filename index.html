@@ -4065,6 +4065,14 @@
         temporalToggle.addEventListener('click', (event) => {
           event.stopPropagation();
           chat.temporalMode = !chat.temporalMode;
+          if (chat.temporalMode) {
+            const expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+            chat.messages.forEach(message => {
+              if (message && !message.typing) {
+                message.expiresAt = expiresAt;
+              }
+            });
+          }
           saveChatToStorage(chat);
           renderChats();
         });
@@ -4981,10 +4989,18 @@
     });
 
     function pruneExpiredTemporalMessages() {
+      const now = Date.now();
       chatState.forEach(chat => {
-        chat.messages.forEach(message => {
-          if (message && message.expiresAt && message.expiresAt <= Date.now()) {
-            message._expired = true;
+        const panel = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"]');
+        if (!panel) return;
+        chat.messages.forEach((message, index) => {
+          if (!message || message.typing) return;
+          const expired = Boolean(message.expiresAt && message.expiresAt <= now);
+          const messageEl = panel.querySelector('[data-msg-index="' + index + '"]');
+          if (!messageEl) return;
+          const wrapper = messageEl.classList.contains('message') ? messageEl : messageEl.closest('.message');
+          if (wrapper) {
+            wrapper.classList.toggle('expired', expired);
           }
         });
       });
