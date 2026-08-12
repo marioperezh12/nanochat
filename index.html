@@ -682,6 +682,26 @@
       gap: 12px;
     }
 
+    .workspace-three.maximized {
+      min-height: calc(100vh - var(--topbar-height) - var(--bottom-height) - 20px);
+    }
+
+    .workspace-three.maximized .workspace-three-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .workspace-three.maximized .workspace-three-stage {
+      height: calc(100vh - var(--topbar-height) - var(--bottom-height) - 96px);
+      min-height: 0;
+    }
+
+    .main-shell.workspace-hidden {
+      display: none;
+    }
+
     .workspace-three-panel {
       position: relative;
       border: 1px solid var(--border);
@@ -700,12 +720,12 @@
       height: 560px;
       overflow: hidden;
       touch-action: none;
-      cursor: grab;
+      cursor: default !important;
       border-radius: 0 0 4px 4px;
     }
 
     .workspace-three-stage:active {
-      cursor: grabbing;
+      cursor: default !important;
     }
 
     .workspace-three-canvas {
@@ -715,6 +735,7 @@
       height: 1200px;
       transform-origin: 0 0;
       will-change: transform;
+      cursor: default !important;
     }
 
     .workspace-three-canvas .jtk-connector,
@@ -784,7 +805,7 @@
     }
 
     .workspace-three-chat-drag-handle {
-      cursor: move;
+      cursor: pointer;
       user-select: none;
       touch-action: none;
     }
@@ -793,6 +814,8 @@
       padding: 8px;
       gap: 6px;
       overflow-y: auto;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     .workspace-three-msg {
@@ -800,6 +823,8 @@
       font-size: 0.68rem;
       padding: 5px 6px;
       line-height: 1.3;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     .workspace-three-chat-compose {
@@ -809,7 +834,7 @@
 
     .workspace-three-chat .panel-title {
       width: 100%;
-      cursor: move;
+      cursor: pointer;
       gap: 6px;
       font-size: 0.72rem;
     }
@@ -2446,10 +2471,11 @@
     </aside>
 
     <main class="main" id="mainScroll">
-      <section class="workspace-three" aria-label="Workspace Three">
+      <section class="workspace-three" id="workspaceThreeSection" aria-label="Workspace Three">
         <div class="section-head">
           <h1>Workspace Three</h1>
           <div class="section-head-actions">
+            <button type="button" class="settings-toggle" id="workspaceThreeMaxBtn" title="Maximizar Workspace Three">□</button>
             <button type="button" class="settings-toggle" id="panzoomZoomOutBtn" title="Alejar">-</button>
             <button type="button" class="settings-toggle" id="panzoomResetBtn" title="Reiniciar">⟲</button>
             <button type="button" class="settings-toggle" id="panzoomZoomInBtn" title="Acercar">+</button>
@@ -2468,7 +2494,7 @@
                     <span>Panzoom activo</span>
                   </div>
                 </div>
-                <div class="panel-body workspace-three-chat-body" id="workspaceThreeChatBody">
+                <div class="panel-body workspace-three-chat-body panzoom-exclude" id="workspaceThreeChatBody">
                   <div class="message assistant workspace-three-msg">Este chat vive dentro de un lienzo con pan y zoom.</div>
                   <div class="message user workspace-three-msg">Puedo moverme por el espacio sin perder el contexto visual.</div>
                 </div>
@@ -2485,7 +2511,7 @@
                     <span>Workspace Three</span>
                   </div>
                 </div>
-                <div class="panel-body workspace-three-chat-body" id="workspaceThreeChatBodyTwo">
+                <div class="panel-body workspace-three-chat-body panzoom-exclude" id="workspaceThreeChatBodyTwo">
                   <div class="message assistant workspace-three-msg">Este es un segundo bloque dentro del mismo lienzo.</div>
                   <div class="message user workspace-three-msg">Puedes mover ambos paneles con pan y zoom.</div>
                 </div>
@@ -2620,6 +2646,7 @@
     const workspaceModeWrap = document.getElementById('workspaceModeWrap');
     const workspaceSettingsToggle = document.getElementById('workspaceSettingsToggle');
     const workspaceModeMenu = document.getElementById('workspaceModeMenu');
+    const workspaceThreeSection = document.getElementById('workspaceThreeSection');
     const workspaceThreeStage = document.getElementById('workspaceThreeStage');
     const workspaceThreeCanvas = document.getElementById('workspaceThreeCanvas');
     const workspaceThreeChatBody = document.getElementById('workspaceThreeChatBody');
@@ -2631,7 +2658,9 @@
     const panzoomZoomOutBtn = document.getElementById('panzoomZoomOutBtn');
     const panzoomResetBtn = document.getElementById('panzoomResetBtn');
     const panzoomZoomInBtn = document.getElementById('panzoomZoomInBtn');
+    const workspaceThreeMaxBtn = document.getElementById('workspaceThreeMaxBtn');
     let workspaceThreeJsPlumb = null;
+    let workspaceThreeMaximized = false;
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
@@ -3377,10 +3406,20 @@
       });
 
       if (typeof panzoom.zoom === 'function') {
-        panzoom.zoom(0.2, { force: true });
+        panzoom.zoom(0.4, { force: true });
       }
 
       workspaceThreeStage.addEventListener('wheel', panzoom.zoomWithWheel);
+      workspaceThreeStage.addEventListener('dblclick', (event) => {
+        if (event.target.closest('.workspace-three-chat') || event.target.closest('.panzoom-exclude')) return;
+        event.preventDefault();
+        if (typeof panzoom.zoomToPoint === 'function' && typeof panzoom.getScale === 'function') {
+          const nextScale = Math.min(2.5, panzoom.getScale() * 1.25);
+          panzoom.zoomToPoint(nextScale, { clientX: event.clientX, clientY: event.clientY }, { animate: true });
+        } else if (typeof panzoom.zoomIn === 'function') {
+          panzoom.zoomIn({ animate: true });
+        }
+      });
       panzoomZoomInBtn?.addEventListener('click', () => {
         if (typeof panzoom.zoomIn === 'function') panzoom.zoomIn({ animate: true });
       });
@@ -3392,7 +3431,7 @@
           panzoom.reset({ animate: true, force: true });
         }
         if (typeof panzoom.zoom === 'function') {
-          panzoom.zoom(0.2, { animate: true, force: true });
+          panzoom.zoom(0.4, { animate: true, force: true });
         }
       });
       workspaceThreeChatSend?.addEventListener('click', () => {
@@ -5206,6 +5245,18 @@
         { key: 'complex', label: 'Respuesta compleja' }
       ].map(opt => '<button type="button" class="settings-item columns-item" data-mode="' + opt.key + '">' + opt.label + '</button>').join('');
     }
+    function setWorkspaceThreeMaximized(nextState) {
+      workspaceThreeMaximized = Boolean(nextState);
+      workspaceThreeSection?.classList.toggle('maximized', workspaceThreeMaximized);
+      mainShell?.classList.toggle('workspace-hidden', workspaceThreeMaximized);
+      if (workspaceThreeMaxBtn) {
+        workspaceThreeMaxBtn.textContent = workspaceThreeMaximized ? '::' : '□';
+        workspaceThreeMaxBtn.title = workspaceThreeMaximized ? 'Restaurar Workspace Three' : 'Maximizar Workspace Three';
+      }
+      requestAnimationFrame(() => {
+        if (workspaceThreeJsPlumb) workspaceThreeJsPlumb.repaintEverything();
+      });
+    }
     if (workspaceSettingsToggle && workspaceModeWrap && workspaceModeMenu) {
       workspaceSettingsToggle.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -5221,6 +5272,11 @@
         chat.responseMode = item.getAttribute('data-mode') || null;
         workspaceModeWrap.classList.remove('open');
         renderChats();
+      });
+    }
+    if (workspaceThreeMaxBtn) {
+      workspaceThreeMaxBtn.addEventListener('click', () => {
+        setWorkspaceThreeMaximized(!workspaceThreeMaximized);
       });
     }
     if (newChatMenuItem) {
