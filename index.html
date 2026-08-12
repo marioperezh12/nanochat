@@ -7787,17 +7787,61 @@
       out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
       out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
       out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+      const lines = out.split('\n');
+      const chunks = [];
+      let currentListType = null;
+      let listItems = [];
+      let orderedStart = 1;
 
-      out = out.replace(/(^|\n)((?:[-*] .+(?:\n|$))+)/g, (match, prefix, block) => {
-        const items = block.trim().split('\n').map(line => '<li>' + line.replace(/^[-*]\s+/, '') + '</li>').join('');
-        return prefix + '<ul>' + items + '</ul>';
-      });
-      out = out.replace(/(^|\n)((?:\d+\. .+(?:\n|$))+)/g, (match, prefix, block) => {
-        const items = block.trim().split('\n').map(line => '<li>' + line.replace(/^\d+\.\s+/, '') + '</li>').join('');
-        return prefix + '<ol>' + items + '</ol>';
+      function flushList() {
+        if (!currentListType || !listItems.length) return;
+        if (currentListType === 'ol') {
+          const startAttr = orderedStart > 1 ? ' start="' + orderedStart + '"' : '';
+          chunks.push('<ol' + startAttr + '>' + listItems.join('') + '</ol>');
+        } else {
+          chunks.push('<ul>' + listItems.join('') + '</ul>');
+        }
+        currentListType = null;
+        listItems = [];
+        orderedStart = 1;
+      }
+
+      lines.forEach((line, index) => {
+        const unorderedMatch = line.match(/^\s*[-*]\s+(.+)$/);
+        const orderedMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
+        const trimmed = line.trim();
+        const nextNonEmptyLine = lines.slice(index + 1).find(nextLine => nextLine.trim() !== '') || '';
+
+        if (unorderedMatch) {
+          if (currentListType !== 'ul') flushList();
+          currentListType = 'ul';
+          listItems.push('<li>' + unorderedMatch[1] + '</li>');
+          return;
+        }
+
+        if (orderedMatch) {
+          if (currentListType !== 'ol') flushList();
+          currentListType = 'ol';
+          if (!listItems.length) orderedStart = Number(orderedMatch[1]) || 1;
+          listItems.push('<li>' + orderedMatch[2] + '</li>');
+          return;
+        }
+
+        if (!trimmed) {
+          const keepsOrderedList = currentListType === 'ol' && /^\s*\d+\.\s+/.test(nextNonEmptyLine);
+          const keepsUnorderedList = currentListType === 'ul' && /^\s*[-*]\s+/.test(nextNonEmptyLine);
+          if (keepsOrderedList || keepsUnorderedList) return;
+          flushList();
+          chunks.push('');
+          return;
+        }
+
+        flushList();
+        chunks.push(line);
       });
 
-      out = out.replace(/\n/g, '<br>');
+      flushList();
+      out = chunks.join('<br>');
       out = out.replace(/ CODEBLOCK(\d+) /g, (match, idx) => {
         const raw = codeBlocks[Number(idx)];
         return '<div class="code-block-wrap"><button type="button" class="code-copy" data-code="' + escapeHtml(raw) + '" title="Copiar comando">&#128203;</button><pre class="code-block"><code>' + escapeHtml(raw) + '</code></pre></div>';
