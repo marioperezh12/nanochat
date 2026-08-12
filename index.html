@@ -738,8 +738,10 @@
       width: 1800px;
       height: 1200px;
       transform-origin: 0 0;
-      will-change: transform;
       cursor: default !important;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     .workspace-three-canvas .jtk-connector,
@@ -5847,6 +5849,7 @@
         canvas: true,
         minScale: 0.02,
         maxScale: 2.5,
+        roundPixels: true,
         excludeClass: 'panzoom-exclude'
       });
       workspaceThreePanzoom = panzoom;
