@@ -3846,6 +3846,29 @@
       if (state.closed || state.isPrivate && !state.unlocked || state.sending) return;
       const text = state.input.value.trim();
       if (!text) return;
+      const contextoMatch = text.match(/^\/contexto:\s*(.*)$/is);
+      if (contextoMatch) {
+        const contextoText = contextoMatch[1].trim();
+        state.contextMessage = contextoText
+          ? { rawText: contextoText, display: formatWorkspaceThreeContextHtml(contextoText) }
+          : null;
+        state.input.value = '';
+        renderWorkspaceThreeMiniChat(state);
+        saveWorkspaceThreeToStorage();
+        return;
+      }
+      const ramasMatch = text.match(/^\/ramas(?:\s+([\s\S]*))?$/i);
+      if (ramasMatch) {
+        state.input.value = '';
+        try {
+          await handleWorkspaceThreeRamasCommand(state, (ramasMatch[1] || '').trim());
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas.';
+          addWorkspaceThreeMessage(state, 'assistant', errorText);
+          saveWorkspaceThreeToStorage();
+        }
+        return;
+      }
       const expiresAt = state.temporalMode ? Date.now() + TEMPORAL_MESSAGE_TTL : null;
       addWorkspaceThreeMessage(state, 'user', text, { expiresAt });
       state.input.value = '';
@@ -3933,6 +3956,9 @@
         shareWrap: config.element.querySelector('.panel-share'),
         shareToggle: config.element.querySelector('.share-toggle'),
         shareMenu: config.element.querySelector('.share-menu'),
+        consoleWrap: config.element.querySelector('.panel-console'),
+        consoleToggle: config.element.querySelector('.console-toggle'),
+        consoleMenu: config.element.querySelector('.console-menu'),
         messages: [],
         nextMessageId: 0,
         favorite: false,
@@ -3964,7 +3990,7 @@
       });
 
       function closeWorkspaceThreeActionMenus(exceptWrap) {
-        [state.historyWrap, state.searchWrap, state.shareWrap].forEach(wrap => {
+        [state.historyWrap, state.searchWrap, state.shareWrap, state.consoleWrap].forEach(wrap => {
           if (!wrap || wrap === exceptWrap) return;
           wrap.classList.remove('open');
         });
@@ -4098,6 +4124,20 @@
         }
         state.shareWrap.classList.remove('open');
       });
+      state.consoleToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        const willOpen = !state.consoleWrap.classList.contains('open');
+        closeWorkspaceThreeActionMenus(willOpen ? state.consoleWrap : null);
+        state.consoleWrap.classList.toggle('open');
+      });
+      state.consoleMenu?.addEventListener('click', async (event) => {
+        const item = event.target.closest('.console-item');
+        if (!item) return;
+        event.stopPropagation();
+        state.consoleWrap.classList.remove('open');
+        await runWorkspaceThreeConsoleCommand(state, item.getAttribute('data-command') || '');
+      });
       state.body.addEventListener('click', (event) => {
         const contextMessageEl = event.target.closest('.message.context-message');
         if (contextMessageEl && !event.target.closest('a')) {
@@ -4159,6 +4199,9 @@
     }
 
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
+      const consoleMenuHtml = ''
+        + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas">/ramas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas desde este chat</span></button>';
       return '<div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">'
         + '<div class="panel-title-row">'
         + '<div class="panel-title">'
@@ -4178,6 +4221,7 @@
         + '<div class="panel-history"><button type="button" class="history-toggle panzoom-exclude" title="Historial de mensajes enviados">&#9776;</button><div class="history-menu"></div></div>'
         + '<div class="panel-search"><button type="button" class="search-toggle panzoom-exclude" title="Buscar">&#128269;</button><div class="search-bar"><input type="text" class="search-input panzoom-exclude" placeholder="Buscar en el chat..." /><button type="button" class="search-prev panzoom-exclude" title="Anterior">&#8593;</button><button type="button" class="search-next panzoom-exclude" title="Siguiente">&#8595;</button></div></div>'
         + '<div class="panel-share"><button type="button" class="share-toggle panzoom-exclude" title="Compartir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button><div class="share-menu"><button type="button" class="share-item panzoom-exclude" data-share="all">Compartir todo el chat</button></div></div>'
+        + '<div class="panel-console"><button type="button" class="console-toggle panzoom-exclude" title="Consola de comandos"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg></button><div class="console-menu">' + consoleMenuHtml + '</div></div>'
         + '</div></div>'
         + '<div class="panel-body workspace-three-chat-body panzoom-exclude" id="' + chatId + '-body"></div>'
         + '<div class="panel-input workspace-three-chat-compose">'
@@ -4626,6 +4670,153 @@
       });
     }
 
+    function buildWorkspaceThreeConversationText(messages) {
+      return messages
+        .filter(message => !isTemporalMessageExpired(message))
+        .map(message => {
+          const raw = String(message.text || '').trim();
+          const label = message.role === 'user' ? 'Usuario' : 'Asistente';
+          return label + ': ' + raw;
+        })
+        .join('\n\n');
+    }
+
+    async function buildBranchPlanFromWorkspaceThreeState(state, branchFilter = '') {
+      const activeMessages = state.messages.filter(message => !isTemporalMessageExpired(message));
+      const lastAssistantMessage = [...activeMessages].reverse().find(message => message.role === 'assistant');
+      if (!lastAssistantMessage) {
+        throw new Error('Necesito un último mensaje del asistente con pasos para crear las ramas.');
+      }
+
+      const transcript = buildWorkspaceThreeConversationText(activeMessages);
+      const lastAssistantText = String(lastAssistantMessage.text || '').trim();
+      const contextPrefix = state.contextMessage?.rawText ? ('Contexto fijo del chat:\n' + state.contextMessage.rawText + '\n\n') : '';
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        throw new Error('Conecta tu API key de ' + engineName + ' para usar /ramas.');
+      }
+      const filterText = String(branchFilter || '').trim();
+      const branchInstruction = 'Analiza esta conversación y el último mensaje del asistente. '
+        + 'Responde SOLO con JSON válido, sin markdown, con esta forma exacta: '
+        + '{"summary":"resumen breve y operativo del chat, enfocado en ejecutar el último mensaje","steps":["paso 1","paso 2"]}. '
+        + 'Reglas: el summary debe condensar el contexto útil de toda la conversación. '
+        + 'La lista steps debe salir del último mensaje del asistente, en el mismo orden, normalizando redacción solo si ayuda. '
+        + 'Si un paso incluye comandos o subinstrucciones, mantenlos dentro del mismo string usando saltos de línea. '
+        + 'No inventes pasos extra si no están implícitos de forma clara en el último mensaje. '
+        + 'Si el usuario entrega un filtro o criterio, devuelve SOLO los pasos que cumplan ese criterio y enfoca el summary en esos pasos.';
+
+      const reply = await callSelectedEngine([
+        {
+          role: 'user',
+          content: branchInstruction
+            + '\n\n'
+            + (filterText ? ('Filtro solicitado por el usuario para ramificar:\n' + filterText + '\n\n') : '')
+            + contextPrefix
+            + 'Conversación completa:\n'
+            + transcript
+            + '\n\nÚltimo mensaje del asistente:\n'
+            + lastAssistantText
+        }
+      ], activeKey);
+
+      const parsed = extractJsonObjectFromText(reply) || {};
+      const summary = String(parsed.summary || '').trim();
+      const fallbackSteps = filterText
+        ? applyBranchFilterToSteps(extractOrderedStepsFromText(lastAssistantText), filterText)
+        : extractOrderedStepsFromText(lastAssistantText);
+      const parsedSteps = normalizeBranchSteps(parsed.steps, '');
+      const steps = parsedSteps.length ? parsedSteps : fallbackSteps;
+      if (!steps.length) {
+        throw new Error(filterText
+          ? 'No encontré pasos que coincidan con ese filtro para /ramas.'
+          : 'No pude extraer pasos accionables del último mensaje del asistente.');
+      }
+      return {
+        summary: summary || 'Resumen operativo no disponible.',
+        steps,
+        filterText,
+        rawModelReply: reply,
+        lastAssistantText
+      };
+    }
+
+    function getWorkspaceThreeInlineBranchLayout(sourceState, stepCount) {
+      const childSpacing = 240;
+      const totalHeight = Math.max(0, (stepCount - 1) * childSpacing);
+      const sourceX = Number(sourceState.element?.dataset?.x || 180);
+      const sourceY = Number(sourceState.element?.dataset?.y || 140);
+      const canvasWidth = workspaceThreeCanvas?.clientWidth || 1800;
+      const canvasHeight = workspaceThreeCanvas?.clientHeight || 1200;
+      const existingChildren = (sourceState.connections || [])
+        .filter(connection => connection?._workspaceThreeSourceState === sourceState)
+        .map(connection => connection?._workspaceThreeTargetState)
+        .filter(childState => childState && !childState.closed);
+
+      let childX = clampWorkspaceThreeValue(sourceX + 700, sourceX + 420, Math.max(sourceX + 420, canvasWidth - 520));
+      let startY;
+      if (existingChildren.length) {
+        const maxChildX = existingChildren.reduce((max, childState) => {
+          const x = Number(childState.element?.dataset?.x || childX);
+          return Math.max(max, x);
+        }, childX);
+        const maxChildY = existingChildren.reduce((max, childState) => {
+          const y = Number(childState.element?.dataset?.y || sourceY);
+          return Math.max(max, y);
+        }, sourceY);
+        childX = clampWorkspaceThreeValue(maxChildX, sourceX + 420, Math.max(sourceX + 420, canvasWidth - 520));
+        startY = clampWorkspaceThreeValue(maxChildY + 260, 120, Math.max(120, canvasHeight - totalHeight - 180));
+      } else {
+        startY = clampWorkspaceThreeValue(sourceY - (totalHeight / 2), 120, Math.max(120, canvasHeight - totalHeight - 180));
+      }
+      return {
+        childX,
+        childSpacing,
+        startY
+      };
+    }
+
+    async function handleWorkspaceThreeRamasCommand(sourceState, branchFilter = '') {
+      const plan = await buildBranchPlanFromWorkspaceThreeState(sourceState, branchFilter);
+      const branchLayout = getWorkspaceThreeInlineBranchLayout(sourceState, plan.steps.length);
+      plan.steps.forEach((step, index) => {
+        const stepLabel = extractWorkspaceThreeIntentLabel(step, index);
+        const stepTitle = stepLabel === ('Paso ' + (index + 1))
+          ? stepLabel
+          : ('Paso ' + (index + 1) + ' - ' + stepLabel);
+        const childContext = (plan.filterText ? ('Filtro aplicado:\n' + plan.filterText + '\n\n') : '')
+          + 'Resumen base:\n'
+          + plan.summary
+          + '\n\nPaso asignado:\n'
+          + ((index + 1) + '. ' + step);
+        const childState = createWorkspaceThreeMiniChatNode({
+          id: 'workspace-three-inline-branch-child-' + Date.now() + '-' + index,
+          name: stepTitle,
+          title: stepTitle,
+          subtitle: sourceState.titleStrong?.textContent || sourceState.name || 'Workspace Three',
+          ownerChatId: sourceState.ownerChatId || null,
+          ownerChatName: sourceState.ownerChatName || null,
+          x: branchLayout.childX,
+          y: branchLayout.startY + (index * branchLayout.childSpacing),
+          assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
+          inputPlaceholder: 'Desarrolla este paso...',
+          contextMessage: {
+            rawText: childContext,
+            display: formatWorkspaceThreeContextHtml(childContext)
+          },
+          seedMessages: [
+            {
+              role: 'assistant',
+              text: step,
+              htmlContent: formatMarkdown(step)
+            }
+          ]
+        });
+        if (childState) connectWorkspaceThreeNodes(sourceState, childState);
+      });
+      saveWorkspaceThreeToStorage();
+    }
+
     async function buildBranchPlanFromChat(chat, branchFilter = '') {
       const activeMessages = chat.messages.filter(message => !message.typing && !isTemporalMessageExpired(message));
       const lastAssistantMessage = [...activeMessages].reverse().find(message => message.role === 'assistant');
@@ -4937,6 +5128,32 @@
           freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
         } catch (error) { }
       });
+    }
+
+    async function runWorkspaceThreeConsoleCommand(state, command) {
+      if (command === 'contexto') {
+        handleWorkspaceThreeContextoCommand(state);
+      } else if (command === 'ramas') {
+        handleWorkspaceThreeRamasCommandShortcut(state);
+      }
+    }
+
+    function setWorkspaceThreeInputCommand(state, text) {
+      if (!state?.input) return;
+      state.input.value = text;
+      state.input.focus();
+      try {
+        state.input.setSelectionRange(state.input.value.length, state.input.value.length);
+      } catch (error) { }
+    }
+
+    function handleWorkspaceThreeContextoCommand(state) {
+      const current = state.contextMessage ? (state.contextMessage.rawText || '') : '';
+      setWorkspaceThreeInputCommand(state, '/contexto: ' + current);
+    }
+
+    function handleWorkspaceThreeRamasCommandShortcut(state) {
+      setWorkspaceThreeInputCommand(state, '/ramas');
     }
 
     function openImportModal() {
