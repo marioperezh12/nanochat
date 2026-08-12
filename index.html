@@ -799,6 +799,21 @@
       overflow: hidden;
     }
 
+    .workspace-three-chat.minimized {
+      width: 320px;
+    }
+
+    .workspace-three-chat.maximized {
+      width: min(820px, 72vw);
+      min-height: 480px;
+      height: 480px;
+      z-index: 70;
+    }
+
+    .workspace-three-chat.closed {
+      display: none;
+    }
+
     .workspace-three-chat-header {
       position: relative;
       z-index: 40;
@@ -851,6 +866,20 @@
       align-self: flex-end;
       height: 28px;
       font-size: 0.68rem;
+    }
+
+    .workspace-three-chat.minimized .workspace-three-chat-body,
+    .workspace-three-chat.minimized .workspace-three-chat-compose {
+      display: none;
+    }
+
+    .workspace-three-chat .privacy-overlay {
+      top: 72px;
+    }
+
+    .workspace-three-canvas.connection-hidden .jtk-connector,
+    .workspace-three-canvas.connection-hidden .jtk-overlay {
+      opacity: 0;
     }
 
     .workspace-three-toolbar {
@@ -2488,10 +2517,40 @@
               <div class="workspace-three-note">Arrastra con el mouse o usa la rueda para moverte por la escena.</div>
               <article class="workspace-three-chat-panel workspace-three-chat" id="workspaceThreeChat" data-x="180" data-y="140">
                 <div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">
-                  <div class="panel-title">
-                    <strong>Chat de Workspace Three</strong>
-                    <span class="panel-dot" aria-hidden="true"></span>
-                    <span>Panzoom activo</span>
+                  <div class="panel-title-row">
+                    <div class="panel-title">
+                      <div class="panel-dot"></div>
+                      <strong>Chat de Workspace Three</strong>
+                      <span>Panzoom activo</span>
+                    </div>
+                    <div class="panel-main-actions">
+                      <button type="button" class="min-btn panzoom-exclude" title="Minimizar">&#8722;</button>
+                      <button type="button" class="max-btn panzoom-exclude" title="Maximizar">&#9633;</button>
+                      <button type="button" class="close-btn panzoom-exclude" title="Cerrar">&#215;</button>
+                    </div>
+                  </div>
+                  <div class="panel-actions">
+                    <button type="button" class="fav-toggle panzoom-exclude" title="Marcar como favorito">&#9733;</button>
+                    <button type="button" class="key-toggle panzoom-exclude" title="Proteger chat con contraseña">&#128274;</button>
+                    <button type="button" class="temporal-toggle panzoom-exclude" title="Activar modo temporal">&#9202;</button>
+                    <div class="panel-history">
+                      <button type="button" class="history-toggle panzoom-exclude" title="Historial de mensajes enviados">&#9776;</button>
+                      <div class="history-menu"></div>
+                    </div>
+                    <div class="panel-search">
+                      <button type="button" class="search-toggle panzoom-exclude" title="Buscar">&#128269;</button>
+                      <div class="search-bar">
+                        <input type="text" class="search-input panzoom-exclude" placeholder="Buscar en el chat..." />
+                        <button type="button" class="search-prev panzoom-exclude" title="Anterior">&#8593;</button>
+                        <button type="button" class="search-next panzoom-exclude" title="Siguiente">&#8595;</button>
+                      </div>
+                    </div>
+                    <div class="panel-share">
+                      <button type="button" class="share-toggle panzoom-exclude" title="Compartir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button>
+                      <div class="share-menu">
+                        <button type="button" class="share-item panzoom-exclude" data-share="all">Compartir todo el chat</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="panel-body workspace-three-chat-body panzoom-exclude" id="workspaceThreeChatBody">
@@ -2505,10 +2564,40 @@
               </article>
               <article class="workspace-three-chat-panel workspace-three-chat" id="workspaceThreeChatTwo" data-x="760" data-y="250">
                 <div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">
-                  <div class="panel-title">
-                    <strong>Chat Two</strong>
-                    <span class="panel-dot" aria-hidden="true"></span>
-                    <span>Workspace Three</span>
+                  <div class="panel-title-row">
+                    <div class="panel-title">
+                      <div class="panel-dot"></div>
+                      <strong>Chat Two</strong>
+                      <span>Workspace Three</span>
+                    </div>
+                    <div class="panel-main-actions">
+                      <button type="button" class="min-btn panzoom-exclude" title="Minimizar">&#8722;</button>
+                      <button type="button" class="max-btn panzoom-exclude" title="Maximizar">&#9633;</button>
+                      <button type="button" class="close-btn panzoom-exclude" title="Cerrar">&#215;</button>
+                    </div>
+                  </div>
+                  <div class="panel-actions">
+                    <button type="button" class="fav-toggle panzoom-exclude" title="Marcar como favorito">&#9733;</button>
+                    <button type="button" class="key-toggle panzoom-exclude" title="Proteger chat con contraseña">&#128274;</button>
+                    <button type="button" class="temporal-toggle panzoom-exclude" title="Activar modo temporal">&#9202;</button>
+                    <div class="panel-history">
+                      <button type="button" class="history-toggle panzoom-exclude" title="Historial de mensajes enviados">&#9776;</button>
+                      <div class="history-menu"></div>
+                    </div>
+                    <div class="panel-search">
+                      <button type="button" class="search-toggle panzoom-exclude" title="Buscar">&#128269;</button>
+                      <div class="search-bar">
+                        <input type="text" class="search-input panzoom-exclude" placeholder="Buscar en el chat..." />
+                        <button type="button" class="search-prev panzoom-exclude" title="Anterior">&#8593;</button>
+                        <button type="button" class="search-next panzoom-exclude" title="Siguiente">&#8595;</button>
+                      </div>
+                    </div>
+                    <div class="panel-share">
+                      <button type="button" class="share-toggle panzoom-exclude" title="Compartir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 8l5-5 5 5"></path><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"></path></svg></button>
+                      <div class="share-menu">
+                        <button type="button" class="share-item panzoom-exclude" data-share="all">Compartir todo el chat</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="panel-body workspace-three-chat-body panzoom-exclude" id="workspaceThreeChatBodyTwo">
@@ -2649,6 +2738,8 @@
     const workspaceThreeSection = document.getElementById('workspaceThreeSection');
     const workspaceThreeStage = document.getElementById('workspaceThreeStage');
     const workspaceThreeCanvas = document.getElementById('workspaceThreeCanvas');
+    const workspaceThreeChat = document.getElementById('workspaceThreeChat');
+    const workspaceThreeChatTwo = document.getElementById('workspaceThreeChatTwo');
     const workspaceThreeChatBody = document.getElementById('workspaceThreeChatBody');
     const workspaceThreeChatInput = document.getElementById('workspaceThreeChatInput');
     const workspaceThreeChatSend = document.getElementById('workspaceThreeChatSend');
@@ -2660,6 +2751,8 @@
     const panzoomZoomInBtn = document.getElementById('panzoomZoomInBtn');
     const workspaceThreeMaxBtn = document.getElementById('workspaceThreeMaxBtn');
     let workspaceThreeJsPlumb = null;
+    let workspaceThreeConnection = null;
+    const workspaceThreeMiniChats = [];
     let workspaceThreeMaximized = false;
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
@@ -2702,6 +2795,7 @@
     let groqApiKey = '';
     let deepseekApiKey = '';
     let pendingPrivacyChatId = null;
+    let pendingWorkspaceThreePrivacyChatId = null;
     let userCryptoKey = null;
     let selectedEngine = 'openai';
     const scrollOverrides = {};
@@ -3015,6 +3109,7 @@
     function closePrivacyPasswordModal() {
       privacyModalOverlay.hidden = true;
       pendingPrivacyChatId = null;
+      pendingWorkspaceThreePrivacyChatId = null;
     }
 
     async function savePrivacyPasswordFromModal() {
@@ -3038,6 +3133,15 @@
         }
       }
       pendingPrivacyChatId = null;
+      if (pendingWorkspaceThreePrivacyChatId) {
+        const workspaceThreeMiniChat = workspaceThreeMiniChats.find(item => item.id === pendingWorkspaceThreePrivacyChatId);
+        if (workspaceThreeMiniChat) {
+          workspaceThreeMiniChat.isPrivate = true;
+          workspaceThreeMiniChat.unlocked = false;
+          renderWorkspaceThreeMiniChat(workspaceThreeMiniChat);
+        }
+      }
+      pendingWorkspaceThreePrivacyChatId = null;
       privacyModalOverlay.hidden = true;
       renderChats();
     }
@@ -3140,6 +3244,437 @@
         responseMode,
         pinnedIndices
       }, null, 2);
+    }
+
+    function setWorkspaceThreeChatPosition(chatEl, x, y) {
+      if (!chatEl) return;
+      chatEl.dataset.x = String(x);
+      chatEl.dataset.y = String(y);
+      chatEl.style.left = x + 'px';
+      chatEl.style.top = (y - 10) + 'px';
+    }
+
+    function refreshWorkspaceThreeConnection() {
+      if (workspaceThreeCanvas) {
+        const hasClosedPanels = workspaceThreeMiniChats.some(item => item.closed);
+        workspaceThreeCanvas.classList.toggle('connection-hidden', hasClosedPanels);
+      }
+      if (!workspaceThreeJsPlumb) return;
+      [workspaceThreeChat, workspaceThreeChatTwo].forEach(chatEl => {
+        if (chatEl) workspaceThreeJsPlumb.revalidate(chatEl);
+      });
+      workspaceThreeJsPlumb.repaintEverything();
+    }
+
+    function getWorkspaceThreeMessagesSnapshot(state) {
+      return state.messages
+        .filter(message => message.el && message.el.isConnected)
+        .map(message => ({
+          role: message.role,
+          content: message.text,
+          rawText: message.text
+        }));
+    }
+
+    function removeWorkspaceThreeMessage(state, messageId) {
+      const index = state.messages.findIndex(message => message.id === messageId);
+      if (index === -1) return;
+      const [message] = state.messages.splice(index, 1);
+      if (message.timerId) {
+        clearTimeout(message.timerId);
+        message.timerId = null;
+      }
+      if (message.el && message.el.parentNode) {
+        message.el.parentNode.removeChild(message.el);
+      }
+      if (state.searchMatchIds.includes(messageId)) {
+        state.searchMatchIds = state.searchMatchIds.filter(id => id !== messageId);
+        state.searchCurrent = state.searchMatchIds.length ? Math.min(state.searchCurrent, state.searchMatchIds.length - 1) : -1;
+      }
+    }
+
+    function scheduleWorkspaceThreeMessageExpiration(state, message) {
+      if (!message.expiresAt) return;
+      const delay = Math.max(0, message.expiresAt - Date.now());
+      if (message.timerId) clearTimeout(message.timerId);
+      message.timerId = window.setTimeout(() => {
+        removeWorkspaceThreeMessage(state, message.id);
+        refreshWorkspaceThreeHistoryMenu(state);
+      }, delay);
+    }
+
+    function refreshWorkspaceThreeHistoryMenu(state) {
+      if (!state.historyMenu) return;
+      const userMessages = state.messages.filter(message => message.role === 'user' && message.el && message.el.isConnected);
+      if (!userMessages.length) {
+        state.historyMenu.innerHTML = '<div class="history-item">Sin mensajes enviados</div>';
+        return;
+      }
+      state.historyMenu.innerHTML = userMessages.map(message => {
+        const label = message.text.length > 72 ? message.text.slice(0, 72) + '...' : message.text;
+        return '<button type="button" class="history-item" data-message-id="' + message.id + '">' + escapeHtml(label) + '</button>';
+      }).join('');
+    }
+
+    function clearWorkspaceThreeSearch(state) {
+      if (state.searchHighlightedEl) {
+        clearHighlightsInElement(state.searchHighlightedEl);
+        state.searchHighlightedEl = null;
+      }
+    }
+
+    function recomputeWorkspaceThreeSearchMatches(state) {
+      const query = state.searchInput.value.trim().toLowerCase();
+      state.searchMatchIds = [];
+      state.searchCurrent = -1;
+      if (!query) return;
+      state.messages.forEach(message => {
+        if (!message.el || !message.el.isConnected) return;
+        if (message.text.toLowerCase().includes(query)) state.searchMatchIds.push(message.id);
+      });
+    }
+
+    function goToWorkspaceThreeSearchMatch(state, direction) {
+      const query = state.searchInput.value.trim();
+      if (!query || !state.searchMatchIds.length) return;
+
+      let nextIndex;
+      if (state.searchCurrent === -1) {
+        nextIndex = direction === -1 ? state.searchMatchIds.length - 1 : 0;
+      } else if (direction === -1) {
+        nextIndex = state.searchCurrent === 0 ? 0 : state.searchCurrent - 1;
+      } else {
+        nextIndex = state.searchCurrent === state.searchMatchIds.length - 1 ? state.searchCurrent : state.searchCurrent + 1;
+      }
+
+      clearWorkspaceThreeSearch(state);
+      state.searchCurrent = nextIndex;
+      const message = state.messages.find(item => item.id === state.searchMatchIds[state.searchCurrent]);
+      if (!message || !message.el) return;
+      message.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightMatchesInElement(message.el, query);
+      state.searchHighlightedEl = message.el;
+      message.el.classList.remove('search-flash');
+      void message.el.offsetWidth;
+      message.el.classList.add('search-flash');
+      setTimeout(() => message.el.classList.remove('search-flash'), 850);
+    }
+
+    function bindWorkspaceThreePrivacyOverlay(state, overlayEl) {
+      const inputEl = overlayEl.querySelector('.privacy-password-input');
+      const unlockBtn = overlayEl.querySelector('.privacy-unlock-btn');
+      const errorEl = overlayEl.querySelector('.privacy-overlay-error');
+      if (!inputEl || !unlockBtn || !errorEl) return;
+      inputEl.addEventListener('pointerdown', (event) => event.stopPropagation());
+      const attemptUnlock = async () => {
+        const saved = await loadPrivacyPassword();
+        if (saved && inputEl.value === saved) {
+          state.unlocked = true;
+          renderWorkspaceThreeMiniChat(state);
+          return;
+        }
+        errorEl.textContent = 'Contraseña incorrecta.';
+        inputEl.value = '';
+      };
+      unlockBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        attemptUnlock();
+      });
+      inputEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          attemptUnlock();
+        }
+      });
+    }
+
+    function renderWorkspaceThreeMiniChat(state) {
+      state.element.classList.toggle('minimized', state.minimized);
+      state.element.classList.toggle('maximized', state.maximized);
+      state.element.classList.toggle('closed', state.closed);
+      state.favoriteToggle.classList.toggle('active', state.favorite);
+      state.keyToggle.classList.toggle('active', state.isPrivate);
+      state.temporalToggle.classList.toggle('active', state.temporalMode);
+      state.minBtn.innerHTML = state.minimized ? '&#9633;' : '&#8722;';
+      state.minBtn.title = state.minimized ? 'Restaurar' : 'Minimizar';
+      state.maxBtn.innerHTML = state.maximized ? '&#11119;' : '&#9633;';
+      state.maxBtn.title = state.maximized ? 'Restaurar tamaño' : 'Maximizar';
+      state.closeBtn.title = state.closed ? 'Cerrado' : 'Cerrar';
+      state.body.hidden = state.minimized || state.closed;
+      state.compose.hidden = state.minimized || state.closed;
+
+      const existingOverlay = state.element.querySelector('.privacy-overlay');
+      if (state.isPrivate && !state.unlocked && !state.closed) {
+        if (!existingOverlay) {
+          const overlayEl = document.createElement('div');
+          overlayEl.className = 'privacy-overlay';
+          overlayEl.innerHTML = '<div class="privacy-overlay-box"><div>&#128274; Chat privado</div><div class="privacy-overlay-form"><input type="password" class="privacy-password-input" placeholder="Contraseña" autocomplete="off" /><button type="button" class="privacy-unlock-btn" title="Desbloquear">&#128274;</button></div><div class="privacy-overlay-error"></div></div>';
+          state.element.appendChild(overlayEl);
+          bindWorkspaceThreePrivacyOverlay(state, overlayEl);
+        }
+      } else if (existingOverlay) {
+        existingOverlay.remove();
+      }
+
+      refreshWorkspaceThreeHistoryMenu(state);
+      refreshWorkspaceThreeConnection();
+    }
+
+    function addWorkspaceThreeMessage(state, role, text, options) {
+      if (!text) return null;
+      const settings = options || {};
+      const bubble = settings.existingEl || document.createElement('div');
+      bubble.className = 'message ' + role + ' workspace-three-msg';
+      bubble.textContent = text;
+      if (!settings.existingEl) state.body.appendChild(bubble);
+      const message = {
+        id: state.nextMessageId++,
+        role,
+        text,
+        el: bubble,
+        expiresAt: settings.expiresAt || null,
+        timerId: null
+      };
+      bubble.dataset.messageId = String(message.id);
+      state.messages.push(message);
+      if (message.expiresAt) scheduleWorkspaceThreeMessageExpiration(state, message);
+      refreshWorkspaceThreeHistoryMenu(state);
+      return message;
+    }
+
+    function sendWorkspaceThreeMiniChatMessage(state, assistantPrefix) {
+      if (state.closed || state.isPrivate && !state.unlocked) return;
+      const text = state.input.value.trim();
+      if (!text) return;
+      const expiresAt = state.temporalMode ? Date.now() + TEMPORAL_MESSAGE_TTL : null;
+      addWorkspaceThreeMessage(state, 'user', text, { expiresAt });
+      addWorkspaceThreeMessage(state, 'assistant', assistantPrefix + text, { expiresAt });
+      state.input.value = '';
+      state.body.scrollTop = state.body.scrollHeight;
+    }
+
+    function toggleWorkspaceThreeMaximized(state) {
+      if (state.closed) return;
+      state.maximized = !state.maximized;
+      if (state.maximized) {
+        state.minimized = false;
+        state.element.style.zIndex = '70';
+      } else {
+        state.element.style.zIndex = '';
+      }
+      renderWorkspaceThreeMiniChat(state);
+    }
+
+    function initWorkspaceThreeMiniChat(config) {
+      if (!config.element || !config.body || !config.input || !config.sendBtn) return null;
+      const cleanInput = config.input.cloneNode(true);
+      const cleanSendBtn = config.sendBtn.cloneNode(true);
+      config.input.parentNode.replaceChild(cleanInput, config.input);
+      config.sendBtn.parentNode.replaceChild(cleanSendBtn, config.sendBtn);
+      const state = {
+        id: config.id,
+        name: config.name,
+        assistantPrefix: config.assistantPrefix,
+        element: config.element,
+        body: config.body,
+        input: cleanInput,
+        sendBtn: cleanSendBtn,
+        compose: config.element.querySelector('.workspace-three-chat-compose'),
+        minBtn: config.element.querySelector('.min-btn'),
+        maxBtn: config.element.querySelector('.max-btn'),
+        closeBtn: config.element.querySelector('.close-btn'),
+        favoriteToggle: config.element.querySelector('.fav-toggle'),
+        keyToggle: config.element.querySelector('.key-toggle'),
+        temporalToggle: config.element.querySelector('.temporal-toggle'),
+        historyWrap: config.element.querySelector('.panel-history'),
+        historyToggle: config.element.querySelector('.history-toggle'),
+        historyMenu: config.element.querySelector('.history-menu'),
+        searchWrap: config.element.querySelector('.panel-search'),
+        searchToggle: config.element.querySelector('.search-toggle'),
+        searchInput: config.element.querySelector('.search-input'),
+        searchPrevBtn: config.element.querySelector('.search-prev'),
+        searchNextBtn: config.element.querySelector('.search-next'),
+        shareWrap: config.element.querySelector('.panel-share'),
+        shareToggle: config.element.querySelector('.share-toggle'),
+        shareMenu: config.element.querySelector('.share-menu'),
+        messages: [],
+        nextMessageId: 0,
+        favorite: false,
+        isPrivate: false,
+        unlocked: false,
+        temporalMode: false,
+        minimized: false,
+        maximized: false,
+        closed: false,
+        searchMatchIds: [],
+        searchCurrent: -1,
+        searchHighlightedEl: null
+      };
+
+      state.body.querySelectorAll('.workspace-three-msg').forEach(messageEl => {
+        const role = messageEl.classList.contains('user') ? 'user' : 'assistant';
+        addWorkspaceThreeMessage(state, role, messageEl.textContent || '', { existingEl: messageEl });
+      });
+
+      state.minBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        state.minimized = !state.minimized;
+        if (state.minimized) state.maximized = false;
+        renderWorkspaceThreeMiniChat(state);
+      });
+      state.maxBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleWorkspaceThreeMaximized(state);
+      });
+      state.closeBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        state.closed = true;
+        state.minimized = false;
+        state.maximized = false;
+        renderWorkspaceThreeMiniChat(state);
+      });
+      state.favoriteToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        state.favorite = !state.favorite;
+        renderWorkspaceThreeMiniChat(state);
+      });
+      state.keyToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        if (!hasPrivacyPassword()) {
+          pendingWorkspaceThreePrivacyChatId = state.id;
+          openPrivacyPasswordModal();
+          return;
+        }
+        if (state.isPrivate && !state.unlocked) return;
+        if (state.isPrivate && state.unlocked) {
+          state.isPrivate = false;
+          state.unlocked = false;
+        } else {
+          state.isPrivate = true;
+          state.unlocked = false;
+        }
+        renderWorkspaceThreeMiniChat(state);
+      });
+      state.temporalToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        state.temporalMode = !state.temporalMode;
+        if (state.temporalMode) {
+          const expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          state.messages.forEach(message => {
+            if (!message.el || !message.el.isConnected) return;
+            message.expiresAt = expiresAt;
+            scheduleWorkspaceThreeMessageExpiration(state, message);
+          });
+        }
+        renderWorkspaceThreeMiniChat(state);
+      });
+      state.historyToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        refreshWorkspaceThreeHistoryMenu(state);
+        state.historyWrap.classList.toggle('open');
+      });
+      state.historyMenu?.addEventListener('click', (event) => {
+        const item = event.target.closest('.history-item');
+        if (!item) return;
+        event.stopPropagation();
+        const messageId = Number(item.getAttribute('data-message-id'));
+        const message = state.messages.find(entry => entry.id === messageId);
+        if (message && message.el) {
+          message.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        state.historyWrap.classList.remove('open');
+      });
+      state.searchToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        const open = state.searchWrap.classList.toggle('open');
+        if (open) state.searchInput.focus();
+        else clearWorkspaceThreeSearch(state);
+      });
+      state.searchInput?.addEventListener('pointerdown', (event) => event.stopPropagation());
+      state.searchInput?.addEventListener('input', () => {
+        clearWorkspaceThreeSearch(state);
+        recomputeWorkspaceThreeSearchMatches(state);
+      });
+      state.searchInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          if (state.searchCurrent === -1) recomputeWorkspaceThreeSearchMatches(state);
+          goToWorkspaceThreeSearchMatch(state, 1);
+        }
+      });
+      state.searchPrevBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.searchCurrent === -1) recomputeWorkspaceThreeSearchMatches(state);
+        goToWorkspaceThreeSearchMatch(state, -1);
+      });
+      state.searchNextBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.searchCurrent === -1) recomputeWorkspaceThreeSearchMatches(state);
+        goToWorkspaceThreeSearchMatch(state, 1);
+      });
+      state.shareToggle?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (state.closed) return;
+        state.shareWrap.classList.toggle('open');
+      });
+      state.shareMenu?.addEventListener('click', (event) => {
+        const item = event.target.closest('.share-item');
+        if (!item) return;
+        event.stopPropagation();
+        const text = buildChatExport(getWorkspaceThreeMessagesSnapshot(state), [], state.name, 'short');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).catch(() => { });
+        }
+        state.shareWrap.classList.remove('open');
+      });
+      state.input.addEventListener('pointerdown', (event) => event.stopPropagation());
+      state.input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          sendWorkspaceThreeMiniChatMessage(state, state.assistantPrefix);
+        }
+      });
+      state.sendBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        sendWorkspaceThreeMiniChatMessage(state, state.assistantPrefix);
+      });
+      state.element.querySelectorAll('button, input, textarea').forEach(control => {
+        control.addEventListener('pointerdown', (event) => event.stopPropagation());
+      });
+
+      workspaceThreeMiniChats.push(state);
+      renderWorkspaceThreeMiniChat(state);
+      return state;
+    }
+
+    function initWorkspaceThreeMiniChats() {
+      if (workspaceThreeMiniChats.length) return;
+      initWorkspaceThreeMiniChat({
+        id: 'workspace-three-chat-one',
+        name: 'Chat de Workspace Three',
+        assistantPrefix: 'Workspace Three recibió: ',
+        element: workspaceThreeChat,
+        body: workspaceThreeChatBody,
+        input: workspaceThreeChatInput,
+        sendBtn: workspaceThreeChatSend
+      });
+      initWorkspaceThreeMiniChat({
+        id: 'workspace-three-chat-two',
+        name: 'Chat Two',
+        assistantPrefix: 'Chat Two recibió: ',
+        element: workspaceThreeChatTwo,
+        body: workspaceThreeChatBodyTwo,
+        input: workspaceThreeChatInputTwo,
+        sendBtn: workspaceThreeChatSendTwo
+      });
     }
 
     function generateVersionId() {
@@ -3491,17 +4026,13 @@
       workspaceThreeJsPlumb = instance;
 
       instance.setContainer(workspaceThreeCanvas);
-      instance.connect({
+      workspaceThreeConnection = instance.connect({
         source: workspaceThreeChat,
         target: workspaceThreeChatTwo,
         anchors: [['RightMiddle'], ['LeftMiddle']]
       });
 
-      const repaint = () => {
-        instance.revalidate(workspaceThreeChat);
-        instance.revalidate(workspaceThreeChatTwo);
-        instance.repaintEverything();
-      };
+      const repaint = () => refreshWorkspaceThreeConnection();
       requestAnimationFrame(repaint);
       window.addEventListener('resize', repaint);
     }
@@ -3521,8 +4052,7 @@
 
       if (!chatEl.dataset.x) chatEl.dataset.x = String(chatEl.offsetLeft || 0);
       if (!chatEl.dataset.y) chatEl.dataset.y = String(chatEl.offsetTop || 0);
-      chatEl.style.left = chatEl.dataset.x + 'px';
-      chatEl.style.top = (parseFloat(chatEl.dataset.y || '0') - 10) + 'px';
+      setWorkspaceThreeChatPosition(chatEl, parseFloat(chatEl.dataset.x || '0'), parseFloat(chatEl.dataset.y || '0'));
 
       let dragging = false;
       let startX = 0;
@@ -3531,6 +4061,7 @@
       let startTop = 0;
 
       handle.addEventListener('pointerdown', (event) => {
+        if (event.target.closest('.panzoom-exclude')) return;
         event.preventDefault();
         event.stopPropagation();
         dragging = true;
@@ -3548,24 +4079,15 @@
         const dy = (event.clientY - startY) / scale;
         const nextX = startLeft + dx;
         const nextY = startTop + dy;
-        chatEl.dataset.x = String(nextX);
-        chatEl.dataset.y = String(nextY);
-        chatEl.style.left = nextX + 'px';
-        chatEl.style.top = (nextY - 10) + 'px';
-        if (workspaceThreeJsPlumb) {
-          workspaceThreeJsPlumb.revalidate(chatEl);
-          workspaceThreeJsPlumb.repaintEverything();
-        }
+        setWorkspaceThreeChatPosition(chatEl, nextX, nextY);
+        refreshWorkspaceThreeConnection();
       });
 
       const stopDrag = (event) => {
         if (!dragging) return;
         dragging = false;
         try { handle.releasePointerCapture(event.pointerId); } catch (error) { }
-        if (workspaceThreeJsPlumb) {
-          workspaceThreeJsPlumb.revalidate(chatEl);
-          workspaceThreeJsPlumb.repaintEverything();
-        }
+        refreshWorkspaceThreeConnection();
       };
       handle.addEventListener('pointerup', stopDrag);
       handle.addEventListener('pointercancel', stopDrag);
@@ -5481,6 +6003,7 @@
           appEl.style.setProperty('--sidebar-width', savedWidth + 'px');
         }
       } catch (error) { }
+      initWorkspaceThreeMiniChats();
       initWorkspaceThree();
       initWorkspaceThreeConnections();
       initChats();
