@@ -805,15 +805,15 @@
       overflow: hidden;
     }
 
-    .workspace-three-chat.minimized {
-      width: 320px;
-    }
-
     .workspace-three-chat.maximized {
       width: min(820px, 72vw);
       min-height: 480px;
       height: 480px;
       z-index: 70;
+    }
+
+    .workspace-three-chat.minimized {
+      height: 7%;
     }
 
     .workspace-three-chat.closed {
@@ -836,8 +836,11 @@
     }
 
     .workspace-three-chat-body {
+      flex: 1 1 auto;
+      min-height: 0;
       padding: 8px;
       gap: 6px;
+      overflow-x: hidden;
       overflow-y: auto;
       user-select: text;
       -webkit-user-select: text;
@@ -853,6 +856,7 @@
     }
 
     .workspace-three-chat-compose {
+      flex: 0 0 auto;
       gap: 6px;
       padding: 7px 8px;
     }
@@ -862,6 +866,10 @@
       cursor: pointer;
       gap: 6px;
       font-size: 0.72rem;
+    }
+
+    .workspace-three-chat .max-btn {
+      display: none;
     }
 
     .workspace-three-chat .chat-message-input {
@@ -879,7 +887,9 @@
     }
 
     .workspace-three-chat.minimized .workspace-three-chat-body,
-    .workspace-three-chat.minimized .workspace-three-chat-compose {
+    .workspace-three-chat.minimized .workspace-three-chat-compose,
+    .workspace-three-chat.minimized .panel-body,
+    .workspace-three-chat.minimized .panel-input {
       display: none;
     }
 
