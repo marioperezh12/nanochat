@@ -3743,7 +3743,8 @@
 
     function initWorkspaceThreeMiniChats() {
       if (workspaceThreeMiniChats.length) return;
-      initWorkspaceThreeMiniChat({
+      if (workspaceThreeChat?.isConnected) {
+        initWorkspaceThreeMiniChat({
         id: 'workspace-three-chat-one',
         name: 'Chat de Workspace Three',
         assistantPrefix: 'Workspace Three recibió: ',
@@ -3751,8 +3752,10 @@
         body: workspaceThreeChatBody,
         input: workspaceThreeChatInput,
         sendBtn: workspaceThreeChatSend
-      });
-      initWorkspaceThreeMiniChat({
+        });
+      }
+      if (workspaceThreeChatTwo?.isConnected) {
+        initWorkspaceThreeMiniChat({
         id: 'workspace-three-chat-two',
         name: 'Chat Two',
         assistantPrefix: 'Chat Two recibió: ',
@@ -3760,7 +3763,13 @@
         body: workspaceThreeChatBodyTwo,
         input: workspaceThreeChatInputTwo,
         sendBtn: workspaceThreeChatSendTwo
-      });
+        });
+      }
+    }
+
+    function removeWorkspaceThreeStarterChats() {
+      workspaceThreeChat?.remove();
+      workspaceThreeChatTwo?.remove();
     }
 
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
@@ -4107,6 +4116,168 @@
       workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    function applyBranchFilterToSteps(steps, branchFilter) {
+      if (!branchFilter) return steps.slice();
+      const trimmedFilter = String(branchFilter || '').trim();
+      if (!trimmedFilter) return steps.slice();
+
+      const numberIndexes = Array.from(trimmedFilter.matchAll(/\b(\d+)\b/g))
+        .map(match => Number(match[1]) - 1)
+        .filter(index => Number.isInteger(index) && index >= 0 && index < steps.length);
+      if (numberIndexes.length) {
+        return Array.from(new Set(numberIndexes)).map(index => steps[index]).filter(Boolean);
+      }
+
+      const stopwords = new Set(['paso', 'pasos', 'y', 'o', 'de', 'del', 'la', 'el', 'los', 'las', 'con', 'para']);
+      const keywords = Array.from(new Set(
+        trimmedFilter.toLowerCase().match(/[a-z0-9áéíóúüñ_-]{2,}/gi) || []
+      )).filter(token => !stopwords.has(token));
+      if (!keywords.length) return [];
+      return steps.filter(step => {
+        const lowerStep = step.toLowerCase();
+        return keywords.some(keyword => lowerStep.includes(keyword));
+      });
+    }
+
+    async function buildBranchPlanFromChat(chat, branchFilter = '') {
+      const activeMessages = chat.messages.filter(message => !message.typing && !isTemporalMessageExpired(message));
+      const lastAssistantMessage = [...activeMessages].reverse().find(message => message.role === 'assistant');
+      if (!lastAssistantMessage) {
+        throw new Error('Necesito un último mensaje del asistente con pasos para crear las ramas.');
+      }
+
+      const transcript = buildFullConversationText(activeMessages);
+      const lastAssistantText = (lastAssistantMessage.rawText || lastAssistantMessage.content || '').trim();
+      const contextPrefix = chat.contextMessage?.content ? ('Contexto fijo del chat:\n' + chat.contextMessage.content + '\n\n') : '';
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        throw new Error('Conecta tu API key de ' + engineName + ' para usar /ramas.');
+      }
+      const filterText = String(branchFilter || '').trim();
+
+      const branchInstruction = 'Analiza esta conversación y el último mensaje del asistente. '
+        + 'Responde SOLO con JSON válido, sin markdown, con esta forma exacta: '
+        + '{"summary":"resumen breve y operativo del chat, enfocado en ejecutar el último mensaje","steps":["paso 1","paso 2"]}. '
+        + 'Reglas: el summary debe condensar el contexto útil de toda la conversación. '
+        + 'La lista steps debe salir del último mensaje del asistente, en el mismo orden, normalizando redacción solo si ayuda. '
+        + 'Si un paso incluye comandos o subinstrucciones, mantenlos dentro del mismo string usando saltos de línea. '
+        + 'No inventes pasos extra si no están implícitos de forma clara en el último mensaje. '
+        + 'Si el usuario entrega un filtro o criterio, devuelve SOLO los pasos que cumplan ese criterio y enfoca el summary en esos pasos.';
+
+      const reply = await callSelectedEngine([
+        {
+          role: 'user',
+          content: branchInstruction
+            + '\n\n'
+            + (filterText ? ('Filtro solicitado por el usuario para ramificar:\n' + filterText + '\n\n') : '')
+            + contextPrefix
+            + 'Conversación completa:\n'
+            + transcript
+            + '\n\nÚltimo mensaje del asistente:\n'
+            + lastAssistantText
+        }
+      ], activeKey);
+
+      const parsed = extractJsonObjectFromText(reply) || {};
+      const summary = String(parsed.summary || '').trim();
+      const fallbackSteps = filterText
+        ? applyBranchFilterToSteps(extractOrderedStepsFromText(lastAssistantText), filterText)
+        : extractOrderedStepsFromText(lastAssistantText);
+      const parsedSteps = normalizeBranchSteps(parsed.steps, '');
+      const steps = parsedSteps.length ? parsedSteps : fallbackSteps;
+      if (!steps.length) {
+        throw new Error(filterText
+          ? 'No encontré pasos que coincidan con ese filtro para /ramas.'
+          : 'No pude extraer pasos accionables del último mensaje del asistente.');
+      }
+      return {
+        summary: summary || 'Resumen operativo no disponible.',
+        steps,
+        filterText,
+        rawModelReply: reply,
+        lastAssistantText
+      };
+    }
+
+    async function handleRamasCommand(chat, branchFilter = '') {
+      chat.statusMessage = 'Generando ramas...';
+      renderChats();
+
+      const plan = await buildBranchPlanFromChat(chat, branchFilter);
+      const branchOrigin = getWorkspaceThreeBranchOrigin(plan.steps.length);
+      const childSpacing = 220;
+      const childX = branchOrigin.x + 700;
+      const totalHeight = Math.max(0, (plan.steps.length - 1) * childSpacing);
+      const parentY = branchOrigin.y + (totalHeight / 2);
+      const stepsText = plan.steps.map((step, index) => (index + 1) + '. ' + step).join('\n\n');
+      const parentContext = (plan.filterText ? ('Filtro aplicado:\n' + plan.filterText + '\n\n') : '')
+        + 'Resumen del chat:\n'
+        + plan.summary
+        + '\n\nPasos recomendados del último mensaje:\n'
+        + stepsText;
+
+      const parentState = createWorkspaceThreeMiniChatNode({
+        id: 'workspace-three-branch-parent-' + Date.now(),
+        name: 'Ramas de ' + chat.name,
+        title: 'Ramas de ' + chat.name,
+        subtitle: 'Contexto base',
+        x: branchOrigin.x,
+        y: parentY,
+        assistantPrefix: 'Nodo padre recibió: ',
+        inputPlaceholder: 'Escribe para expandir esta rama...',
+        contextMessage: {
+          rawText: parentContext,
+          display: formatWorkspaceThreeContextHtml(parentContext)
+        },
+        seedMessages: [
+          {
+            role: 'assistant',
+            text: 'Se generaron ' + plan.steps.length + ' ramas desde el último mensaje recomendado.',
+            htmlContent: formatMarkdown('Se generaron **' + plan.steps.length + '** ramas desde el último mensaje recomendado.')
+          }
+        ]
+      });
+      if (!parentState) {
+        chat.statusMessage = null;
+        throw new Error('No pude crear el nodo padre en Workspace Three.');
+      }
+
+      plan.steps.forEach((step, index) => {
+        const childContext = (plan.filterText ? ('Filtro aplicado:\n' + plan.filterText + '\n\n') : '')
+          + 'Resumen base:\n'
+          + plan.summary
+          + '\n\nPaso asignado:\n'
+          + ((index + 1) + '. ' + step);
+        const childState = createWorkspaceThreeMiniChatNode({
+          id: 'workspace-three-branch-child-' + Date.now() + '-' + index,
+          name: 'Paso ' + (index + 1),
+          title: 'Paso ' + (index + 1),
+          subtitle: chat.name,
+          x: childX,
+          y: branchOrigin.y + (index * childSpacing),
+          assistantPrefix: 'Paso ' + (index + 1) + ' recibió: ',
+          inputPlaceholder: 'Desarrolla este paso...',
+          contextMessage: {
+            rawText: childContext,
+            display: formatWorkspaceThreeContextHtml(childContext)
+          },
+          seedMessages: [
+            {
+              role: 'assistant',
+              text: step,
+              htmlContent: formatMarkdown(step)
+            }
+          ]
+        });
+        if (childState) connectWorkspaceThreeNodes(parentState, childState);
+      });
+
+      chat.statusMessage = null;
+      setTemporaryChatStatus(chat, 'Se crearon ' + plan.steps.length + ' ramas en Workspace Three.');
+      workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     async function handleResumenCommand(chat, scope) {
       const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
       const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
@@ -4220,8 +4391,6 @@
         await handleResumenCommand(chat, 'anclados');
       } else if (command === 'resumen-general') {
         await handleResumenCommand(chat, 'general');
-      } else if (command === 'ramas') {
-        await handleRamasCommand(chat);
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
         chat.consoleShowDelete = false;
@@ -4399,7 +4568,7 @@
     }
 
     function initWorkspaceThreeConnections() {
-      if (!window.jsPlumb || !workspaceThreeCanvas || !workspaceThreeChat || !workspaceThreeChatTwo) return;
+      if (!window.jsPlumb || !workspaceThreeCanvas) return;
       const instance = window.jsPlumb.getInstance({
         Connector: ['Flowchart', { cornerRadius: 12, stub: 24 }],
         PaintStyle: { stroke: 'rgba(65, 214, 199, 0.9)', strokeWidth: 3 },
@@ -4412,16 +4581,18 @@
       workspaceThreeJsPlumb = instance;
 
       instance.setContainer(workspaceThreeCanvas);
-      workspaceThreeConnection = instance.connect({
-        source: workspaceThreeChat,
-        target: workspaceThreeChatTwo,
-        anchors: [['RightMiddle'], ['LeftMiddle']]
-      });
-      workspaceThreeConnections.push(workspaceThreeConnection);
-      const sourceState = workspaceThreeMiniChats.find(item => item.element === workspaceThreeChat);
-      const targetState = workspaceThreeMiniChats.find(item => item.element === workspaceThreeChatTwo);
-      if (sourceState) sourceState.connections.push(workspaceThreeConnection);
-      if (targetState) targetState.connections.push(workspaceThreeConnection);
+      if (workspaceThreeChat?.isConnected && workspaceThreeChatTwo?.isConnected) {
+        workspaceThreeConnection = instance.connect({
+          source: workspaceThreeChat,
+          target: workspaceThreeChatTwo,
+          anchors: [['RightMiddle'], ['LeftMiddle']]
+        });
+        workspaceThreeConnections.push(workspaceThreeConnection);
+        const sourceState = workspaceThreeMiniChats.find(item => item.element === workspaceThreeChat);
+        const targetState = workspaceThreeMiniChats.find(item => item.element === workspaceThreeChatTwo);
+        if (sourceState) sourceState.connections.push(workspaceThreeConnection);
+        if (targetState) targetState.connections.push(workspaceThreeConnection);
+      }
 
       const repaint = () => refreshWorkspaceThreeConnection();
       requestAnimationFrame(repaint);
@@ -4484,8 +4655,8 @@
       handle.addEventListener('pointercancel', stopDrag);
     }
 
-    wireWorkspaceThreeChatDrag(workspaceThreeChat);
-    wireWorkspaceThreeChatDrag(workspaceThreeChatTwo);
+    if (workspaceThreeChat?.isConnected) wireWorkspaceThreeChatDrag(workspaceThreeChat);
+    if (workspaceThreeChatTwo?.isConnected) wireWorkspaceThreeChatDrag(workspaceThreeChatTwo);
 
     function renderMinimizedMenu() {
       const minimized = chatState.filter(chat => chat.minimized && !chat.deleted);
@@ -4754,7 +4925,6 @@
 
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
-          + '<button type="button" class="console-item" data-command="ramas">/ramas<span class="console-item-desc">Resume el chat y abre ramas en Workspace Three usando los pasos del último mensaje del asistente</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
@@ -5958,13 +6128,15 @@
         return;
       }
 
-      if (/^\/ramas\s*$/i.test(text)) {
+      const ramasMatch = text.match(/^\/ramas(?:\s+([\s\S]*))?$/i);
+      if (ramasMatch) {
         input.value = '';
         chat.draftText = '';
         try {
-          await handleRamasCommand(chat);
+          await handleRamasCommand(chat, (ramasMatch[1] || '').trim());
         } catch (error) {
           const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas.';
+          chat.statusMessage = null;
           setTemporaryChatStatus(chat, errorText, 4200);
         }
         return;
@@ -6430,6 +6602,7 @@
           appEl.style.setProperty('--sidebar-width', savedWidth + 'px');
         }
       } catch (error) { }
+      removeWorkspaceThreeStarterChats();
       initWorkspaceThreeMiniChats();
       initWorkspaceThree();
       initWorkspaceThreeConnections();
