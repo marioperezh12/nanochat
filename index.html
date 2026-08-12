@@ -5,6 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NanoChat</title>
+  <script src="https://unpkg.com/@panzoom/panzoom@4.6.2/dist/panzoom.min.js"></script>
   <script>
     (function () {
       try {
@@ -672,6 +673,162 @@
       flex: 1;
       min-height: 0;
       grid-auto-rows: minmax(560px, 1fr);
+    }
+
+    .workspace-three {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .workspace-three-panel {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(65, 214, 199, 0.14), transparent 22%),
+        radial-gradient(circle at 80% 18%, rgba(46, 143, 255, 0.12), transparent 22%),
+        rgba(10, 23, 29, 0.82);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .workspace-three-stage {
+      position: relative;
+      width: 100%;
+      height: 560px;
+      overflow: hidden;
+      touch-action: none;
+      cursor: grab;
+      border-radius: 0 0 4px 4px;
+    }
+
+    .workspace-three-stage:active {
+      cursor: grabbing;
+    }
+
+    .workspace-three-canvas {
+      position: absolute;
+      inset: 0;
+      width: 1800px;
+      height: 1200px;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    .workspace-three-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(133, 167, 180, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(133, 167, 180, 0.08) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.45;
+    }
+
+    .workspace-three-note {
+      position: absolute;
+      left: 18px;
+      top: 18px;
+      z-index: 2;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(7, 18, 22, 0.8);
+      color: var(--muted);
+      font-size: 0.76rem;
+      pointer-events: none;
+    }
+
+    .workspace-three-chat {
+      position: absolute;
+      left: 180px;
+      top: 140px;
+      width: 460px;
+      border: 1px solid rgba(65, 214, 199, 0.25);
+      border-radius: 10px;
+      background: rgba(6, 18, 24, 0.96);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .workspace-three-chat-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(159, 229, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .workspace-three-chat-drag-handle {
+      cursor: move;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .workspace-three-chat-body {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .workspace-three-msg {
+      padding: 10px 12px;
+      border-radius: 10px;
+      max-width: 86%;
+      line-height: 1.45;
+      font-size: 0.82rem;
+    }
+
+    .workspace-three-msg.user {
+      margin-left: auto;
+      background: rgba(65, 214, 199, 0.16);
+      border: 1px solid rgba(65, 214, 199, 0.18);
+    }
+
+    .workspace-three-msg.assistant {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(159, 229, 255, 0.1);
+    }
+
+    .workspace-three-chat-compose {
+      display: flex;
+      gap: 8px;
+      padding: 12px 14px 14px;
+      border-top: 1px solid rgba(159, 229, 255, 0.1);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .workspace-three-chat-compose input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      padding: 10px 12px;
+      outline: none;
+      font-size: 0.82rem;
+    }
+
+    .workspace-three-chat-compose button {
+      border: 1px solid rgba(65, 214, 199, 0.35);
+      background: rgba(65, 214, 199, 0.14);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    .workspace-three-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: -4px;
     }
 
     .chat-panel {
@@ -2285,6 +2442,53 @@
     </aside>
 
     <main class="main" id="mainScroll">
+      <section class="workspace-three" aria-label="Workspace Three">
+        <div class="section-head">
+          <h1>Workspace Three</h1>
+          <div class="section-head-actions">
+            <button type="button" class="settings-toggle" id="panzoomZoomOutBtn" title="Alejar">-</button>
+            <button type="button" class="settings-toggle" id="panzoomResetBtn" title="Reiniciar">⟲</button>
+            <button type="button" class="settings-toggle" id="panzoomZoomInBtn" title="Acercar">+</button>
+          </div>
+        </div>
+        <div class="workspace-three-panel">
+          <div class="workspace-three-stage" id="workspaceThreeStage">
+            <div class="workspace-three-canvas" id="workspaceThreeCanvas">
+              <div class="workspace-three-grid"></div>
+              <div class="workspace-three-note">Arrastra con el mouse o usa la rueda para moverte por la escena.</div>
+              <article class="workspace-three-chat" id="workspaceThreeChat" data-x="180" data-y="140">
+                <div class="workspace-three-chat-header workspace-three-chat-drag-handle">
+                  <strong>Chat de Workspace Three</strong>
+                  <span>Panzoom activo</span>
+                </div>
+                <div class="workspace-three-chat-body" id="workspaceThreeChatBody">
+                  <div class="workspace-three-msg assistant">Este chat vive dentro de un lienzo con pan y zoom.</div>
+                  <div class="workspace-three-msg user">Puedo moverme por el espacio sin perder el contexto visual.</div>
+                </div>
+                <div class="workspace-three-chat-compose">
+                  <input class="panzoom-exclude" id="workspaceThreeChatInput" type="text" placeholder="Escribe en Workspace Three..." />
+                  <button class="panzoom-exclude" type="button" id="workspaceThreeChatSend">Enviar</button>
+                </div>
+              </article>
+              <article class="workspace-three-chat" id="workspaceThreeChatTwo" data-x="760" data-y="250">
+                <div class="workspace-three-chat-header workspace-three-chat-drag-handle">
+                  <strong>Chat Two</strong>
+                  <span>Workspace Three</span>
+                </div>
+                <div class="workspace-three-chat-body" id="workspaceThreeChatBodyTwo">
+                  <div class="workspace-three-msg assistant">Este es un segundo bloque dentro del mismo lienzo.</div>
+                  <div class="workspace-three-msg user">Puedes mover ambos paneles con pan y zoom.</div>
+                </div>
+                <div class="workspace-three-chat-compose">
+                  <input class="panzoom-exclude" id="workspaceThreeChatInputTwo" type="text" placeholder="Escribe en Chat Two..." />
+                  <button class="panzoom-exclude" type="button" id="workspaceThreeChatSendTwo">Enviar</button>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="main-shell" id="mainShell">
         <div class="section-head">
           <h1>Workspace</h1>
@@ -2406,6 +2610,17 @@
     const workspaceModeWrap = document.getElementById('workspaceModeWrap');
     const workspaceSettingsToggle = document.getElementById('workspaceSettingsToggle');
     const workspaceModeMenu = document.getElementById('workspaceModeMenu');
+    const workspaceThreeStage = document.getElementById('workspaceThreeStage');
+    const workspaceThreeCanvas = document.getElementById('workspaceThreeCanvas');
+    const workspaceThreeChatBody = document.getElementById('workspaceThreeChatBody');
+    const workspaceThreeChatInput = document.getElementById('workspaceThreeChatInput');
+    const workspaceThreeChatSend = document.getElementById('workspaceThreeChatSend');
+    const workspaceThreeChatBodyTwo = document.getElementById('workspaceThreeChatBodyTwo');
+    const workspaceThreeChatInputTwo = document.getElementById('workspaceThreeChatInputTwo');
+    const workspaceThreeChatSendTwo = document.getElementById('workspaceThreeChatSendTwo');
+    const panzoomZoomOutBtn = document.getElementById('panzoomZoomOutBtn');
+    const panzoomResetBtn = document.getElementById('panzoomResetBtn');
+    const panzoomZoomInBtn = document.getElementById('panzoomZoomInBtn');
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
@@ -3140,6 +3355,131 @@
       closeImportModal();
       renderChats();
     }
+
+    function initWorkspaceThree() {
+      if (!workspaceThreeStage || !workspaceThreeCanvas) return;
+      const panzoom = Panzoom(workspaceThreeCanvas, {
+        canvas: true,
+        contain: 'outside',
+        minScale: 0.6,
+        maxScale: 2.5,
+        excludeClass: 'panzoom-exclude'
+      });
+
+      workspaceThreeStage.addEventListener('wheel', panzoom.zoomWithWheel);
+      panzoomZoomInBtn?.addEventListener('click', () => {
+        if (typeof panzoom.zoomIn === 'function') panzoom.zoomIn({ animate: true });
+      });
+      panzoomZoomOutBtn?.addEventListener('click', () => {
+        if (typeof panzoom.zoomOut === 'function') panzoom.zoomOut({ animate: true });
+      });
+      panzoomResetBtn?.addEventListener('click', () => {
+        if (typeof panzoom.reset === 'function') {
+          panzoom.reset({ animate: true });
+        }
+      });
+      workspaceThreeChatSend?.addEventListener('click', () => {
+        const text = workspaceThreeChatInput?.value.trim();
+        if (!text) return;
+        const userBubble = document.createElement('div');
+        userBubble.className = 'workspace-three-msg user';
+        userBubble.textContent = text;
+        workspaceThreeChatBody?.appendChild(userBubble);
+        const assistantBubble = document.createElement('div');
+        assistantBubble.className = 'workspace-three-msg assistant';
+        assistantBubble.textContent = 'Workspace Three recibió: ' + text;
+        workspaceThreeChatBody?.appendChild(assistantBubble);
+        if (workspaceThreeChatInput) workspaceThreeChatInput.value = '';
+      });
+      workspaceThreeChatInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          workspaceThreeChatSend?.click();
+        }
+      });
+    }
+
+    if (workspaceThreeChatInputTwo && workspaceThreeChatSendTwo && workspaceThreeChatBodyTwo) {
+      workspaceThreeChatSendTwo.addEventListener('click', () => {
+        const text = workspaceThreeChatInputTwo.value.trim();
+        if (!text) return;
+        const userBubble = document.createElement('div');
+        userBubble.className = 'workspace-three-msg user';
+        userBubble.textContent = text;
+        workspaceThreeChatBodyTwo.appendChild(userBubble);
+        const assistantBubble = document.createElement('div');
+        assistantBubble.className = 'workspace-three-msg assistant';
+        assistantBubble.textContent = 'Chat Two recibió: ' + text;
+        workspaceThreeChatBodyTwo.appendChild(assistantBubble);
+        workspaceThreeChatInputTwo.value = '';
+      });
+      workspaceThreeChatInputTwo.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          workspaceThreeChatSendTwo.click();
+        }
+      });
+    }
+
+    function getWorkspaceThreeScale() {
+      if (!workspaceThreeCanvas) return 1;
+      const transform = getComputedStyle(workspaceThreeCanvas).transform;
+      if (!transform || transform === 'none') return 1;
+      const matrix = new DOMMatrixReadOnly(transform);
+      return matrix.a || 1;
+    }
+
+    function wireWorkspaceThreeChatDrag(chatEl) {
+      if (!chatEl || !workspaceThreeCanvas || !workspaceThreeStage) return;
+      const handle = chatEl.querySelector('.workspace-three-chat-drag-handle');
+      if (!handle) return;
+
+      if (!chatEl.dataset.x) chatEl.dataset.x = String(chatEl.offsetLeft || 0);
+      if (!chatEl.dataset.y) chatEl.dataset.y = String(chatEl.offsetTop || 0);
+      chatEl.style.left = chatEl.dataset.x + 'px';
+      chatEl.style.top = chatEl.dataset.y + 'px';
+
+      let dragging = false;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+
+      handle.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = parseFloat(chatEl.dataset.x || '0');
+        startTop = parseFloat(chatEl.dataset.y || '0');
+        handle.setPointerCapture(event.pointerId);
+      });
+
+      handle.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        const scale = getWorkspaceThreeScale();
+        const dx = (event.clientX - startX) / scale;
+        const dy = (event.clientY - startY) / scale;
+        const nextX = startLeft + dx;
+        const nextY = startTop + dy;
+        chatEl.dataset.x = String(nextX);
+        chatEl.dataset.y = String(nextY);
+        chatEl.style.left = nextX + 'px';
+        chatEl.style.top = nextY + 'px';
+      });
+
+      const stopDrag = (event) => {
+        if (!dragging) return;
+        dragging = false;
+        try { handle.releasePointerCapture(event.pointerId); } catch (error) { }
+      };
+      handle.addEventListener('pointerup', stopDrag);
+      handle.addEventListener('pointercancel', stopDrag);
+    }
+
+    wireWorkspaceThreeChatDrag(workspaceThreeChat);
+    wireWorkspaceThreeChatDrag(workspaceThreeChatTwo);
 
     function renderMinimizedMenu() {
       const minimized = chatState.filter(chat => chat.minimized && !chat.deleted);
@@ -5031,6 +5371,7 @@
           appEl.style.setProperty('--sidebar-width', savedWidth + 'px');
         }
       } catch (error) { }
+      initWorkspaceThree();
       initChats();
     }
 
