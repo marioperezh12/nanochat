@@ -3904,6 +3904,18 @@
         }
         return;
       }
+      const multiIaMatch = text.match(/^\/multi-ia(?:\s+([\s\S]*))?$/i);
+      if (multiIaMatch) {
+        state.input.value = '';
+        try {
+          await handleWorkspaceThreeMultiIaCommand(state, (multiIaMatch[1] || '').trim());
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /multi-ia.';
+          addWorkspaceThreeMessage(state, 'assistant', errorText);
+          saveWorkspaceThreeToStorage();
+        }
+        return;
+      }
       if (/^\/resumen-anclados$/i.test(text)) {
         state.input.value = '';
         await handleWorkspaceThreeResumenCommand(state, 'anclados');
@@ -4305,12 +4317,13 @@
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
       const consoleMenuHtml = ''
         + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume sólo los mensajes anclados de este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación de este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="chatsversion">/chatsversion<span class="console-item-desc">Carga una versión anterior guardada de este chat</span></button>'
-        + '<button type="button" class="console-item panzoom-exclude" data-command="eliminar">/eliminar<span class="console-item-desc">Elimina la conversación actual o una versión guardada</span></button>'
-        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
-        + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>';
+        + '<button type="button" class="console-item panzoom-exclude" data-command="eliminar">/eliminar<span class="console-item-desc">Elimina la conversación actual o una versión guardada</span></button>';
       return '<div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">'
         + '<div class="panel-title-row">'
         + '<div class="panel-title">'
@@ -5555,6 +5568,115 @@
       workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    async function handleWorkspaceThreeMultiIaCommand(sourceState, promptText) {
+      const prompt = String(promptText || '').trim();
+      if (!prompt) {
+        throw new Error('Escribe /multi-ia seguido de la solicitud que quieres enviar a los motores.');
+      }
+      const activeMessages = sourceState.messages.filter(message => !isTemporalMessageExpired(message));
+      if (!activeMessages.length) {
+        throw new Error('No hay conversación previa en este chat para resumir antes de ejecutar /multi-ia.');
+      }
+      const configuredEngines = getConfiguredEngineEntries();
+      if (!configuredEngines.length) {
+        throw new Error('Necesitas al menos una API key configurada para usar /multi-ia.');
+      }
+
+      const transcript = buildWorkspaceThreeConversationText(activeMessages);
+      const contextPrefix = sourceState.contextMessage?.rawText ? ('Contexto fijo del chat:\n' + sourceState.contextMessage.rawText + '\n\n') : '';
+      const summary = await generateChatSummaryWithCurrentEngine(contextPrefix + transcript);
+      const branchLayout = getWorkspaceThreeInlineBranchLayout(sourceState, configuredEngines.length);
+      const canvasWidth = workspaceThreeCanvas?.clientWidth || 1800;
+      const totalHeight = Math.max(0, (configuredEngines.length - 1) * branchLayout.childSpacing);
+      const parentX = branchLayout.childX;
+      const parentY = branchLayout.startY + (totalHeight / 2);
+      const childX = clampWorkspaceThreeValue(parentX + 700, parentX + 420, Math.max(parentX + 420, canvasWidth - 520));
+
+      const parentState = createWorkspaceThreeMiniChatNode({
+        id: 'workspace-three-inline-multi-ia-parent-' + Date.now(),
+        name: 'Multi-IA de ' + (sourceState.name || 'Workspace Three'),
+        title: 'Multi-IA de ' + (sourceState.name || 'Workspace Three'),
+        subtitle: 'Contexto resumido',
+        ownerChatId: sourceState.ownerChatId || null,
+        ownerChatName: sourceState.ownerChatName || null,
+        x: parentX,
+        y: parentY,
+        assistantPrefix: 'Nodo multi-IA recibió: ',
+        inputPlaceholder: 'Continúa esta comparación...',
+        contextMessage: {
+          rawText: summary,
+          display: formatWorkspaceThreeContextHtml(summary)
+        },
+        seedMessages: [
+          {
+            role: 'assistant',
+            text: 'Solicitud enviada a ' + configuredEngines.length + ' motor(es): ' + prompt,
+            htmlContent: formatMarkdown('**Solicitud multi-IA:** ' + prompt + '\n\nMotores consultados: ' + configuredEngines.map(entry => entry.label).join(', '))
+          }
+        ]
+      });
+      if (!parentState) {
+        throw new Error('No pude crear el nodo padre de /multi-ia en Workspace Three.');
+      }
+      connectWorkspaceThreeNodes(sourceState, parentState);
+
+      const engineReplies = await Promise.all(configuredEngines.map(async (entry) => {
+        try {
+          const reply = await callEngineByName(entry.engine, [{
+            role: 'user',
+            content: 'Usa este resumen del chat como contexto de trabajo:\n\n'
+              + summary
+              + '\n\nSolicitud actual del usuario:\n'
+              + prompt
+          }], entry.key);
+          return {
+            label: entry.label,
+            reply
+          };
+        } catch (error) {
+          return {
+            label: entry.label,
+            reply: 'No se pudo obtener respuesta de ' + entry.label + ': ' + (error && error.message ? error.message : 'error desconocido') + '.'
+          };
+        }
+      }));
+
+      engineReplies.forEach((result, index) => {
+        const childContext = 'Resumen del chat:\n'
+          + summary
+          + '\n\nSolicitud original del usuario:\n'
+          + prompt
+          + '\n\nMotor asignado:\n'
+          + result.label;
+        const childState = createWorkspaceThreeMiniChatNode({
+          id: 'workspace-three-inline-multi-ia-child-' + Date.now() + '-' + index,
+          name: result.label,
+          title: result.label,
+          subtitle: 'Respuesta multi-IA',
+          ownerChatId: sourceState.ownerChatId || null,
+          ownerChatName: sourceState.ownerChatName || null,
+          x: childX,
+          y: branchLayout.startY + (index * branchLayout.childSpacing),
+          assistantPrefix: result.label + ' respondió: ',
+          inputPlaceholder: 'Continúa con ' + result.label + '...',
+          contextMessage: {
+            rawText: childContext,
+            display: formatWorkspaceThreeContextHtml(childContext)
+          },
+          seedMessages: [
+            {
+              role: 'assistant',
+              text: result.reply,
+              htmlContent: formatMarkdown(result.reply)
+            }
+          ]
+        });
+        if (childState) connectWorkspaceThreeNodes(parentState, childState);
+      });
+
+      saveWorkspaceThreeToStorage();
+    }
+
     async function handleResumenCommand(chat, scope) {
       const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
       const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
@@ -5743,6 +5865,8 @@
     async function runWorkspaceThreeConsoleCommand(state, command) {
       if (command === 'contexto') {
         handleWorkspaceThreeContextoCommand(state);
+      } else if (command === 'multi-ia') {
+        handleWorkspaceThreeMultiIaCommandShortcut(state);
       } else if (command === 'resumen-anclados') {
         await handleWorkspaceThreeResumenCommand(state, 'anclados');
       } else if (command === 'resumen-general') {
@@ -5770,6 +5894,10 @@
     function handleWorkspaceThreeContextoCommand(state) {
       const current = state.contextMessage ? (state.contextMessage.rawText || '') : '';
       setWorkspaceThreeInputCommand(state, '/contexto: ' + current);
+    }
+
+    function handleWorkspaceThreeMultiIaCommandShortcut(state) {
+      setWorkspaceThreeInputCommand(state, '/multi-ia ');
     }
 
     function handleWorkspaceThreeBranchCommandShortcut(state, mode) {
