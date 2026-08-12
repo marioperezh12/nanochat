@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NanoChat</title>
   <script src="https://unpkg.com/@panzoom/panzoom@4.6.2/dist/panzoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsplumb@2.15.6/dist/js/jsplumb.min.js"></script>
   <script>
     (function () {
       try {
@@ -714,6 +715,17 @@
       height: 1200px;
       transform-origin: 0 0;
       will-change: transform;
+    }
+
+    .workspace-three-canvas .jtk-connector,
+    .workspace-three-canvas .jtk-endpoint,
+    .workspace-three-canvas .jtk-overlay {
+      pointer-events: none;
+    }
+
+    .workspace-three-canvas .jtk-connector path {
+      stroke: rgba(65, 214, 199, 0.9);
+      stroke-width: 3;
     }
 
     .workspace-three-grid {
@@ -2621,6 +2633,7 @@
     const panzoomZoomOutBtn = document.getElementById('panzoomZoomOutBtn');
     const panzoomResetBtn = document.getElementById('panzoomResetBtn');
     const panzoomZoomInBtn = document.getElementById('panzoomZoomInBtn');
+    let workspaceThreeJsPlumb = null;
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
@@ -3421,6 +3434,35 @@
       });
     }
 
+    function initWorkspaceThreeConnections() {
+      if (!window.jsPlumb || !workspaceThreeCanvas || !workspaceThreeChat || !workspaceThreeChatTwo) return;
+      const instance = window.jsPlumb.getInstance({
+        Connector: ['Flowchart', { cornerRadius: 12, stub: 24 }],
+        PaintStyle: { stroke: 'rgba(65, 214, 199, 0.9)', strokeWidth: 3 },
+        Endpoint: 'Blank',
+        HoverPaintStyle: { stroke: 'rgba(255, 216, 77, 0.95)', strokeWidth: 3 },
+        ConnectionOverlays: [
+          ['Arrow', { location: 1, width: 10, length: 10, foldback: 0.8, paintStyle: { fill: 'rgba(65, 214, 199, 0.95)' } }]
+        ]
+      });
+      workspaceThreeJsPlumb = instance;
+
+      instance.setContainer(workspaceThreeCanvas);
+      instance.connect({
+        source: workspaceThreeChat,
+        target: workspaceThreeChatTwo,
+        anchors: [['RightMiddle'], ['LeftMiddle']]
+      });
+
+      const repaint = () => {
+        instance.revalidate(workspaceThreeChat);
+        instance.revalidate(workspaceThreeChatTwo);
+        instance.repaintEverything();
+      };
+      requestAnimationFrame(repaint);
+      window.addEventListener('resize', repaint);
+    }
+
     function getWorkspaceThreeScale() {
       if (!workspaceThreeCanvas) return 1;
       const transform = getComputedStyle(workspaceThreeCanvas).transform;
@@ -3437,7 +3479,7 @@
       if (!chatEl.dataset.x) chatEl.dataset.x = String(chatEl.offsetLeft || 0);
       if (!chatEl.dataset.y) chatEl.dataset.y = String(chatEl.offsetTop || 0);
       chatEl.style.left = chatEl.dataset.x + 'px';
-      chatEl.style.top = chatEl.dataset.y + 'px';
+      chatEl.style.top = (parseFloat(chatEl.dataset.y || '0') - 10) + 'px';
 
       let dragging = false;
       let startX = 0;
@@ -3466,13 +3508,21 @@
         chatEl.dataset.x = String(nextX);
         chatEl.dataset.y = String(nextY);
         chatEl.style.left = nextX + 'px';
-        chatEl.style.top = nextY + 'px';
+        chatEl.style.top = (nextY - 10) + 'px';
+        if (workspaceThreeJsPlumb) {
+          workspaceThreeJsPlumb.revalidate(chatEl);
+          workspaceThreeJsPlumb.repaintEverything();
+        }
       });
 
       const stopDrag = (event) => {
         if (!dragging) return;
         dragging = false;
         try { handle.releasePointerCapture(event.pointerId); } catch (error) { }
+        if (workspaceThreeJsPlumb) {
+          workspaceThreeJsPlumb.revalidate(chatEl);
+          workspaceThreeJsPlumb.repaintEverything();
+        }
       };
       handle.addEventListener('pointerup', stopDrag);
       handle.addEventListener('pointercancel', stopDrag);
@@ -5372,6 +5422,7 @@
         }
       } catch (error) { }
       initWorkspaceThree();
+      initWorkspaceThreeConnections();
       initChats();
     }
 
