@@ -752,28 +752,35 @@
       pointer-events: none;
     }
 
+    .workspace-three-chat-panel {
+      position: relative;
+      min-height: 0;
+      min-width: 0;
+      height: 50%;
+      width: 10%;
+      overflow: visible;
+      display: flex;
+      flex-direction: column;
+      transition: opacity 220ms ease, transform 220ms ease, max-height 220ms ease;
+      max-height: none;
+      isolation: isolate;
+    }
+
     .workspace-three-chat {
       position: absolute;
       left: 180px;
       top: 140px;
-      width: 460px;
-      border: 1px solid rgba(65, 214, 199, 0.25);
-      border-radius: 10px;
-      background: rgba(6, 18, 24, 0.96);
-      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+      width: 35%;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(12, 29, 35, 0.94);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
       overflow: hidden;
     }
 
     .workspace-three-chat-header {
-      padding: 12px 14px;
-      border-bottom: 1px solid rgba(159, 229, 255, 0.1);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 0.8rem;
-      color: var(--muted);
-      background: rgba(255, 255, 255, 0.02);
+      position: relative;
+      z-index: 40;
     }
 
     .workspace-three-chat-drag-handle {
@@ -783,57 +790,42 @@
     }
 
     .workspace-three-chat-body {
-      padding: 14px;
-      display: grid;
-      gap: 10px;
+      padding: 8px;
+      gap: 6px;
+      overflow-y: auto;
     }
 
     .workspace-three-msg {
-      padding: 10px 12px;
-      border-radius: 10px;
-      max-width: 86%;
-      line-height: 1.45;
-      font-size: 0.82rem;
-    }
-
-    .workspace-three-msg.user {
-      margin-left: auto;
-      background: rgba(65, 214, 199, 0.16);
-      border: 1px solid rgba(65, 214, 199, 0.18);
-    }
-
-    .workspace-three-msg.assistant {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(159, 229, 255, 0.1);
+      max-width: 92%;
+      font-size: 0.68rem;
+      padding: 5px 6px;
+      line-height: 1.3;
     }
 
     .workspace-three-chat-compose {
-      display: flex;
-      gap: 8px;
-      padding: 12px 14px 14px;
-      border-top: 1px solid rgba(159, 229, 255, 0.1);
-      background: rgba(255, 255, 255, 0.02);
+      gap: 6px;
+      padding: 7px 8px;
     }
 
-    .workspace-three-chat-compose input {
-      flex: 1;
-      min-width: 0;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.03);
-      color: var(--text);
-      padding: 10px 12px;
-      outline: none;
-      font-size: 0.82rem;
+    .workspace-three-chat .panel-title {
+      width: 100%;
+      cursor: move;
+      gap: 6px;
+      font-size: 0.72rem;
+    }
+
+    .workspace-three-chat .chat-message-input {
+      min-height: 32px;
+      max-height: 60px;
+      font-size: 0.68rem;
+      padding: 5px 6px;
     }
 
     .workspace-three-chat-compose button {
-      border: 1px solid rgba(65, 214, 199, 0.35);
-      background: rgba(65, 214, 199, 0.14);
-      color: var(--text);
-      border-radius: 999px;
-      padding: 10px 14px;
-      cursor: pointer;
+      min-width: 48px;
+      align-self: flex-end;
+      height: 28px;
+      font-size: 0.68rem;
     }
 
     .workspace-three-toolbar {
@@ -2468,31 +2460,37 @@
             <div class="workspace-three-canvas" id="workspaceThreeCanvas">
               <div class="workspace-three-grid"></div>
               <div class="workspace-three-note">Arrastra con el mouse o usa la rueda para moverte por la escena.</div>
-              <article class="workspace-three-chat" id="workspaceThreeChat" data-x="180" data-y="140">
-                <div class="workspace-three-chat-header workspace-three-chat-drag-handle">
-                  <strong>Chat de Workspace Three</strong>
-                  <span>Panzoom activo</span>
+              <article class="workspace-three-chat-panel workspace-three-chat" id="workspaceThreeChat" data-x="180" data-y="140">
+                <div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">
+                  <div class="panel-title">
+                    <strong>Chat de Workspace Three</strong>
+                    <span class="panel-dot" aria-hidden="true"></span>
+                    <span>Panzoom activo</span>
+                  </div>
                 </div>
-                <div class="workspace-three-chat-body" id="workspaceThreeChatBody">
-                  <div class="workspace-three-msg assistant">Este chat vive dentro de un lienzo con pan y zoom.</div>
-                  <div class="workspace-three-msg user">Puedo moverme por el espacio sin perder el contexto visual.</div>
+                <div class="panel-body workspace-three-chat-body" id="workspaceThreeChatBody">
+                  <div class="message assistant workspace-three-msg">Este chat vive dentro de un lienzo con pan y zoom.</div>
+                  <div class="message user workspace-three-msg">Puedo moverme por el espacio sin perder el contexto visual.</div>
                 </div>
-                <div class="workspace-three-chat-compose">
-                  <input class="panzoom-exclude" id="workspaceThreeChatInput" type="text" placeholder="Escribe en Workspace Three..." />
+                <div class="panel-input workspace-three-chat-compose">
+                  <textarea class="chat-message-input panzoom-exclude" id="workspaceThreeChatInput" rows="2" placeholder="Escribe en Workspace Three..."></textarea>
                   <button class="panzoom-exclude" type="button" id="workspaceThreeChatSend">Enviar</button>
                 </div>
               </article>
-              <article class="workspace-three-chat" id="workspaceThreeChatTwo" data-x="760" data-y="250">
-                <div class="workspace-three-chat-header workspace-three-chat-drag-handle">
-                  <strong>Chat Two</strong>
-                  <span>Workspace Three</span>
+              <article class="workspace-three-chat-panel workspace-three-chat" id="workspaceThreeChatTwo" data-x="760" data-y="250">
+                <div class="panel-top workspace-three-chat-header workspace-three-chat-drag-handle">
+                  <div class="panel-title">
+                    <strong>Chat Two</strong>
+                    <span class="panel-dot" aria-hidden="true"></span>
+                    <span>Workspace Three</span>
+                  </div>
                 </div>
-                <div class="workspace-three-chat-body" id="workspaceThreeChatBodyTwo">
-                  <div class="workspace-three-msg assistant">Este es un segundo bloque dentro del mismo lienzo.</div>
-                  <div class="workspace-three-msg user">Puedes mover ambos paneles con pan y zoom.</div>
+                <div class="panel-body workspace-three-chat-body" id="workspaceThreeChatBodyTwo">
+                  <div class="message assistant workspace-three-msg">Este es un segundo bloque dentro del mismo lienzo.</div>
+                  <div class="message user workspace-three-msg">Puedes mover ambos paneles con pan y zoom.</div>
                 </div>
-                <div class="workspace-three-chat-compose">
-                  <input class="panzoom-exclude" id="workspaceThreeChatInputTwo" type="text" placeholder="Escribe en Chat Two..." />
+                <div class="panel-input workspace-three-chat-compose">
+                  <textarea class="chat-message-input panzoom-exclude" id="workspaceThreeChatInputTwo" rows="2" placeholder="Escribe en Chat Two..."></textarea>
                   <button class="panzoom-exclude" type="button" id="workspaceThreeChatSendTwo">Enviar</button>
                 </div>
               </article>
@@ -3373,11 +3371,14 @@
       if (!workspaceThreeStage || !workspaceThreeCanvas) return;
       const panzoom = Panzoom(workspaceThreeCanvas, {
         canvas: true,
-        contain: 'outside',
-        minScale: 0.6,
+        minScale: 0.02,
         maxScale: 2.5,
         excludeClass: 'panzoom-exclude'
       });
+
+      if (typeof panzoom.zoom === 'function') {
+        panzoom.zoom(0.2, { force: true });
+      }
 
       workspaceThreeStage.addEventListener('wheel', panzoom.zoomWithWheel);
       panzoomZoomInBtn?.addEventListener('click', () => {
@@ -3388,18 +3389,21 @@
       });
       panzoomResetBtn?.addEventListener('click', () => {
         if (typeof panzoom.reset === 'function') {
-          panzoom.reset({ animate: true });
+          panzoom.reset({ animate: true, force: true });
+        }
+        if (typeof panzoom.zoom === 'function') {
+          panzoom.zoom(0.2, { animate: true, force: true });
         }
       });
       workspaceThreeChatSend?.addEventListener('click', () => {
         const text = workspaceThreeChatInput?.value.trim();
         if (!text) return;
         const userBubble = document.createElement('div');
-        userBubble.className = 'workspace-three-msg user';
+        userBubble.className = 'message user workspace-three-msg';
         userBubble.textContent = text;
         workspaceThreeChatBody?.appendChild(userBubble);
         const assistantBubble = document.createElement('div');
-        assistantBubble.className = 'workspace-three-msg assistant';
+        assistantBubble.className = 'message assistant workspace-three-msg';
         assistantBubble.textContent = 'Workspace Three recibió: ' + text;
         workspaceThreeChatBody?.appendChild(assistantBubble);
         if (workspaceThreeChatInput) workspaceThreeChatInput.value = '';
@@ -3417,11 +3421,11 @@
         const text = workspaceThreeChatInputTwo.value.trim();
         if (!text) return;
         const userBubble = document.createElement('div');
-        userBubble.className = 'workspace-three-msg user';
+        userBubble.className = 'message user workspace-three-msg';
         userBubble.textContent = text;
         workspaceThreeChatBodyTwo.appendChild(userBubble);
         const assistantBubble = document.createElement('div');
-        assistantBubble.className = 'workspace-three-msg assistant';
+        assistantBubble.className = 'message assistant workspace-three-msg';
         assistantBubble.textContent = 'Chat Two recibió: ' + text;
         workspaceThreeChatBodyTwo.appendChild(assistantBubble);
         workspaceThreeChatInputTwo.value = '';
