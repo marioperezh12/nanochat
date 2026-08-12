@@ -2826,6 +2826,7 @@
     let workspaceThreeMaximized = false;
     let workspaceThreeVisible = false;
     let activeWorkspaceThreeChatId = null;
+    let workspaceThreeZIndexCounter = 10;
     const newChatMenuItem = document.getElementById('newChatMenuItem');
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
@@ -3026,6 +3027,7 @@
         maximized: Boolean(state.maximized),
         closed: Boolean(state.closed),
         ownerChatName: state.ownerChatName || null,
+        zIndex: Number(state.zIndex) || 1,
         contextMessage: state.contextMessage && state.contextMessage.rawText
           ? {
             rawText: state.contextMessage.rawText,
@@ -3492,6 +3494,39 @@
       chatEl.style.top = (y - 10) + 'px';
     }
 
+    function clampWorkspaceThreeValue(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function getWorkspaceThreeViewportCenter() {
+      const stageWidth = workspaceThreeStage?.clientWidth || 960;
+      const stageHeight = workspaceThreeStage?.clientHeight || 560;
+      const scale = getWorkspaceThreeScale();
+      let offsetX = 0;
+      let offsetY = 0;
+      const transform = workspaceThreeCanvas ? getComputedStyle(workspaceThreeCanvas).transform : 'none';
+      if (transform && transform !== 'none') {
+        const matrix = new DOMMatrixReadOnly(transform);
+        offsetX = matrix.e || 0;
+        offsetY = matrix.f || 0;
+      }
+      return {
+        x: (stageWidth / 2 - offsetX) / scale,
+        y: (stageHeight / 2 - offsetY) / scale
+      };
+    }
+
+    function bringWorkspaceThreeChatToFront(target) {
+      const state = target && target.element
+        ? target
+        : workspaceThreeMiniChats.find(item => item.element === target) || null;
+      if (!state || state.closed) return;
+      workspaceThreeZIndexCounter = Math.max(workspaceThreeZIndexCounter, Number(state.zIndex) || 0) + 1;
+      state.zIndex = workspaceThreeZIndexCounter;
+      state.element.style.zIndex = String(state.maximized ? Math.max(1000, state.zIndex) : state.zIndex);
+      saveWorkspaceThreeToStorage();
+    }
+
     function refreshWorkspaceThreeConnection() {
       if (workspaceThreeSection) {
         workspaceThreeSection.hidden = !workspaceThreeVisible;
@@ -3735,6 +3770,7 @@
       state.element.classList.toggle('minimized', state.minimized);
       state.element.classList.toggle('maximized', state.maximized);
       state.element.classList.toggle('closed', state.closed);
+      state.element.style.zIndex = String(state.maximized ? Math.max(1000, Number(state.zIndex) || 1) : (Number(state.zIndex) || 1));
       state.favoriteToggle.classList.toggle('active', state.favorite);
       state.keyToggle.classList.toggle('active', state.isPrivate);
       state.temporalToggle.classList.toggle('active', state.temporalMode);
@@ -3856,9 +3892,9 @@
       state.maximized = !state.maximized;
       if (state.maximized) {
         state.minimized = false;
-        state.element.style.zIndex = '70';
+        state.element.style.zIndex = String(Math.max(1000, Number(state.zIndex) || 1));
       } else {
-        state.element.style.zIndex = '';
+        state.element.style.zIndex = String(Number(state.zIndex) || 1);
       }
       renderWorkspaceThreeMiniChat(state);
     }
@@ -3906,6 +3942,7 @@
         minimized: false,
         maximized: false,
         closed: false,
+        zIndex: Number.isFinite(Number(config.zIndex)) ? Number(config.zIndex) : (++workspaceThreeZIndexCounter),
         ownerChatId: config.ownerChatId || null,
         ownerChatName: config.ownerChatName || null,
         contextMessage: config.contextMessage || null,
@@ -3915,6 +3952,7 @@
         searchHighlightedEl: null,
         sending: false
       };
+      workspaceThreeZIndexCounter = Math.max(workspaceThreeZIndexCounter, state.zIndex);
 
       if (config.title) state.titleStrong.textContent = config.title;
       if (config.subtitle) state.titleSpan.textContent = config.subtitle;
@@ -4081,6 +4119,8 @@
       state.element.querySelectorAll('button, input, textarea').forEach(control => {
         control.addEventListener('pointerdown', (event) => event.stopPropagation());
       });
+      state.element.addEventListener('pointerdown', () => bringWorkspaceThreeChatToFront(state), true);
+      state.element.addEventListener('focusin', () => bringWorkspaceThreeChatToFront(state));
 
       workspaceThreeMiniChats.push(state);
       renderWorkspaceThreeMiniChat(state);
@@ -4146,16 +4186,26 @@
         + '</div>';
     }
 
-    function getWorkspaceThreeBranchOrigin(stepCount) {
-      const visibleChats = workspaceThreeMiniChats.filter(item => !item.closed);
-      const maxY = visibleChats.reduce((max, item) => {
+    function getWorkspaceThreeBranchOrigin(stepCount, ownerChatName, childSpacing) {
+      const ownerChats = workspaceThreeMiniChats.filter(item => !item.closed && item.ownerChatName === ownerChatName);
+      const totalHeight = Math.max(0, (stepCount - 1) * childSpacing);
+      const canvasWidth = workspaceThreeCanvas?.clientWidth || 1800;
+      const canvasHeight = workspaceThreeCanvas?.clientHeight || 1200;
+      if (!ownerChats.length) {
+        const center = getWorkspaceThreeViewportCenter();
+        return {
+          x: clampWorkspaceThreeValue(center.x - 520, 120, 260),
+          y: clampWorkspaceThreeValue(center.y - (totalHeight / 2), 120, Math.max(120, canvasHeight - totalHeight - 180))
+        };
+      }
+      const maxY = ownerChats.reduce((max, item) => {
         const y = Number(item.element?.dataset?.y || 140);
         return Math.max(max, y);
       }, 140);
-      const clusterSpacing = Math.max(260, stepCount * 56);
+      const clusterSpacing = Math.max(300, stepCount * 72);
       return {
         x: 180,
-        y: maxY + clusterSpacing
+        y: clampWorkspaceThreeValue(maxY + clusterSpacing, 120, Math.max(120, canvasHeight - totalHeight - 180))
       };
     }
 
@@ -4186,6 +4236,7 @@
         body: article.querySelector('.workspace-three-chat-body'),
         input: article.querySelector('.chat-message-input'),
         sendBtn: article.querySelector('button[id$="-send"]'),
+        zIndex: options.zIndex || null,
         ownerChatId: options.ownerChatId || null,
         ownerChatName: options.ownerChatName || null,
         contextMessage: options.contextMessage || null,
@@ -4241,11 +4292,12 @@
           title: item.title || item.name || 'Workspace Three',
           subtitle: item.subtitle || 'Rama',
           assistantPrefix: item.assistantPrefix || ((item.title || item.name || 'Workspace Three') + ' recibió: '),
-          ownerChatId: ownerChat ? ownerChat.id : null,
-          ownerChatName: item.ownerChatName || (ownerChat ? ownerChat.name : null),
-          x: Number.isFinite(Number(item.x)) ? Number(item.x) : 180,
-          y: Number.isFinite(Number(item.y)) ? Number(item.y) : 140,
-          inputPlaceholder: item.inputPlaceholder || 'Escribe un mensaje...',
+        ownerChatId: ownerChat ? ownerChat.id : null,
+        ownerChatName: item.ownerChatName || (ownerChat ? ownerChat.name : null),
+        zIndex: Number(item.zIndex) || undefined,
+        x: Number.isFinite(Number(item.x)) ? Number(item.x) : 180,
+        y: Number.isFinite(Number(item.y)) ? Number(item.y) : 140,
+        inputPlaceholder: item.inputPlaceholder || 'Escribe un mensaje...',
           contextMessage: item.contextMessage || null,
           seedMessages: []
         });
@@ -4640,9 +4692,10 @@
       renderChats();
 
       const plan = await buildBranchPlanFromChat(chat, branchFilter);
-      const branchOrigin = getWorkspaceThreeBranchOrigin(plan.steps.length);
-      const childSpacing = 220;
-      const childX = branchOrigin.x + 700;
+      const isFirstBranchLayout = !workspaceThreeMiniChats.some(item => !item.closed && item.ownerChatName === chat.name);
+      const childSpacing = isFirstBranchLayout ? 300 : 240;
+      const branchOrigin = getWorkspaceThreeBranchOrigin(plan.steps.length, chat.name, childSpacing);
+      const childX = branchOrigin.x + (isFirstBranchLayout ? 760 : 700);
       const totalHeight = Math.max(0, (plan.steps.length - 1) * childSpacing);
       const parentY = branchOrigin.y + (totalHeight / 2);
       const stepsText = plan.steps.map((step, index) => (index + 1) + '. ' + step).join('\n\n');
