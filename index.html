@@ -4633,10 +4633,49 @@
     }
 
     async function callSelectedEngine(messages, activeKey) {
-      if (selectedEngine === 'gemini') return callGemini(messages, activeKey);
-      if (selectedEngine === 'groq') return callGroq(messages, activeKey);
-      if (selectedEngine === 'deepseek') return callDeepSeek(messages, activeKey);
+      return callEngineByName(selectedEngine, messages, activeKey);
+    }
+
+    async function callEngineByName(engine, messages, activeKey) {
+      if (engine === 'gemini') return callGemini(messages, activeKey);
+      if (engine === 'groq') return callGroq(messages, activeKey);
+      if (engine === 'deepseek') return callDeepSeek(messages, activeKey);
       return callOpenAI(messages, activeKey);
+    }
+
+    function getConfiguredEngineEntries() {
+      return ['openai', 'gemini', 'groq', 'deepseek']
+        .map(engine => ({
+          engine,
+          label: engineLabel(engine),
+          key: getEngineKey(engine)
+        }))
+        .filter(entry => entry.key);
+    }
+
+    function buildChatSummaryInstruction() {
+      return 'Resume la siguiente conversación siguiendo EXACTAMENTE esta plantilla de formato:\n\n'
+        + '[Párrafo breve de 1-2 frases con la intención general de la conversación, de qué se trata todo]\n\n'
+        + '- [Punto o paso 1, redactado como intención/acción directa, ej: "Instalar imagen de YOLOv5"]\n'
+        + '```\n[comando exacto si el punto 1 tiene uno, en su propia línea, nunca mezclado con el texto]\n```\n'
+        + '- [Punto o paso 2]\n'
+        + '```\n[comando del punto 2, si aplica]\n```\n\n'
+        + 'Reglas: cada bloque de comando va SIEMPRE en su propia línea encerrado entre triple backtick (```), nunca dentro de la misma línea del punto ni como texto plano. '
+        + 'Si un punto no tiene comando, omite el bloque para ese punto. '
+        + 'No uses el formato "Usuario: ..." ni "Asistente: ...". '
+        + 'No incluyas comentarios sobre lo que hizo el asistente si no aportan información nueva (por ejemplo, evita frases como "Asistente: proporciona el comando").\n\n'
+        + 'Conversación a resumir:\n\n';
+    }
+
+    async function generateChatSummaryWithCurrentEngine(transcript) {
+      const engineName = engineLabel(selectedEngine);
+      const activeKey = getEngineKey(selectedEngine);
+      if (!activeKey) {
+        throw new Error('Conecta tu API key de ' + engineName + ' para generar el resumen.');
+      }
+      return callSelectedEngine([
+        { role: 'user', content: buildChatSummaryInstruction() + transcript }
+      ], activeKey);
     }
 
     async function buildBranchPlanFromChat(chat) {
@@ -5387,6 +5426,133 @@
       workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    async function handleMultiIaCommand(chat, promptText) {
+      const prompt = String(promptText || '').trim();
+      if (!prompt) {
+        throw new Error('Escribe /multi-ia seguido de la solicitud que quieres enviar a los motores.');
+      }
+      if (chat.hasBranches) {
+        throw new Error('Este chat ya contiene ramas asociadas.');
+      }
+      const activeMessages = chat.messages.filter(message => !message.typing && !isTemporalMessageExpired(message));
+      if (!activeMessages.length) {
+        throw new Error('No hay conversación previa para resumir antes de ejecutar /multi-ia.');
+      }
+      const configuredEngines = getConfiguredEngineEntries();
+      if (!configuredEngines.length) {
+        throw new Error('Necesitas al menos una API key configurada para usar /multi-ia.');
+      }
+
+      chat.statusMessage = 'Consultando múltiples motores IA...';
+      renderChats();
+
+      const transcript = buildFullConversationText(activeMessages);
+      const contextPrefix = chat.contextMessage?.content ? ('Contexto fijo del chat:\n' + chat.contextMessage.content + '\n\n') : '';
+      const summary = await generateChatSummaryWithCurrentEngine(contextPrefix + transcript);
+
+      const engineMessages = configuredEngines.map(entry => {
+        const userContent = 'Usa este resumen del chat como contexto de trabajo:\n\n'
+          + summary
+          + '\n\nSolicitud actual del usuario:\n'
+          + prompt;
+        return {
+          entry,
+          messages: [{ role: 'user', content: userContent }]
+        };
+      });
+
+      const engineReplies = await Promise.all(engineMessages.map(async ({ entry, messages }) => {
+        try {
+          const reply = await callEngineByName(entry.engine, messages, entry.key);
+          return {
+            engine: entry.engine,
+            label: entry.label,
+            reply
+          };
+        } catch (error) {
+          return {
+            engine: entry.engine,
+            label: entry.label,
+            reply: 'No se pudo obtener respuesta de ' + entry.label + ': ' + (error && error.message ? error.message : 'error desconocido') + '.'
+          };
+        }
+      }));
+
+      const childSpacing = configuredEngines.length > 1 ? 260 : 220;
+      const branchOrigin = getWorkspaceThreeBranchOrigin(configuredEngines.length, chat.name, childSpacing);
+      const childX = branchOrigin.x + 760;
+      const totalHeight = Math.max(0, (configuredEngines.length - 1) * childSpacing);
+      const parentY = branchOrigin.y + (totalHeight / 2);
+      const contextText = summary;
+      const parentState = createWorkspaceThreeMiniChatNode({
+        id: 'workspace-three-multi-ia-parent-' + Date.now(),
+        name: 'Multi-IA de ' + chat.name,
+        title: 'Multi-IA de ' + chat.name,
+        subtitle: 'Contexto resumido',
+        ownerChatId: chat.id,
+        ownerChatName: chat.name,
+        x: branchOrigin.x,
+        y: parentY,
+        assistantPrefix: 'Nodo multi-IA recibió: ',
+        inputPlaceholder: 'Continúa esta comparación...',
+        contextMessage: {
+          rawText: contextText,
+          display: formatWorkspaceThreeContextHtml(contextText)
+        },
+        seedMessages: [
+          {
+            role: 'assistant',
+            text: 'Solicitud enviada a ' + configuredEngines.length + ' motor(es): ' + prompt,
+            htmlContent: formatMarkdown('**Solicitud multi-IA:** ' + prompt + '\n\nMotores consultados: ' + configuredEngines.map(entry => entry.label).join(', '))
+          }
+        ]
+      });
+      if (!parentState) {
+        chat.statusMessage = null;
+        throw new Error('No pude crear el nodo padre de /multi-ia en Workspace Three.');
+      }
+
+      engineReplies.forEach((result, index) => {
+        const childContext = 'Resumen del chat:\n'
+          + summary
+          + '\n\nSolicitud original del usuario:\n'
+          + prompt
+          + '\n\nMotor asignado:\n'
+          + result.label;
+        const childState = createWorkspaceThreeMiniChatNode({
+          id: 'workspace-three-multi-ia-child-' + Date.now() + '-' + index,
+          name: result.label,
+          title: result.label,
+          subtitle: 'Respuesta multi-IA',
+          ownerChatId: chat.id,
+          ownerChatName: chat.name,
+          x: childX,
+          y: branchOrigin.y + (index * childSpacing),
+          assistantPrefix: result.label + ' respondió: ',
+          inputPlaceholder: 'Continúa con ' + result.label + '...',
+          contextMessage: {
+            rawText: childContext,
+            display: formatWorkspaceThreeContextHtml(childContext)
+          },
+          seedMessages: [
+            {
+              role: 'assistant',
+              text: result.reply,
+              htmlContent: formatMarkdown(result.reply)
+            }
+          ]
+        });
+        if (childState) connectWorkspaceThreeNodes(parentState, childState);
+      });
+
+      chat.statusMessage = null;
+      chat.hasBranches = true;
+      saveChatToStorage(chat);
+      setWorkspaceThreeActiveChat(chat.id);
+      setTemporaryChatStatus(chat, 'Se generó una comparación multi-IA con ' + configuredEngines.length + ' motor(es).');
+      workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     async function handleResumenCommand(chat, scope) {
       const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
       const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
@@ -5504,6 +5670,8 @@
         handleBranchCommandShortcut(chat, 'parallel');
       } else if (command === 'ramas-secuenciales') {
         handleBranchCommandShortcut(chat, 'sequential');
+      } else if (command === 'multi-ia') {
+        handleMultiIaCommandShortcut(chat);
       } else if (command === 'chatsversion') {
         chat.consoleShowVersions = true;
         chat.consoleShowDelete = false;
@@ -5538,6 +5706,25 @@
         return;
       }
       chat.draftText = mode === 'sequential' ? '/ramas-secuenciales' : '/ramas-paralelas';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    function handleMultiIaCommandShortcut(chat) {
+      if (chat.hasBranches) {
+        setTemporaryChatStatus(chat, 'Este chat ya contiene ramas asociadas.');
+        return;
+      }
+      chat.draftText = '/multi-ia ';
       renderChats();
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
@@ -6099,6 +6286,7 @@
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
+          + '<button type="button" class="console-item" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-anclados">/resumen-anclados<span class="console-item-desc">Resume solo los mensajes anclados (funciona también viendo una versión anterior)</span></button>'
           + '<button type="button" class="console-item" data-command="resumen-general">/resumen-general<span class="console-item-desc">Resume toda la conversación completa</span></button>'
           + '<button type="button" class="console-item" data-command="chatsversion">/chatsversion<span class="console-item-desc">Lista y carga versiones anteriores del chat</span></button>'
@@ -7344,6 +7532,20 @@
           await handleBranchCommand(chat, (ramasSecuencialesMatch[1] || '').trim(), 'sequential');
         } catch (error) {
           const errorText = error && error.message ? error.message : 'No se pudo ejecutar /ramas-secuenciales.';
+          chat.statusMessage = null;
+          setTemporaryChatStatus(chat, errorText, 4200);
+        }
+        return;
+      }
+
+      const multiIaMatch = text.match(/^\/multi-ia(?:\s+([\s\S]*))?$/i);
+      if (multiIaMatch) {
+        input.value = '';
+        chat.draftText = '';
+        try {
+          await handleMultiIaCommand(chat, (multiIaMatch[1] || '').trim());
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /multi-ia.';
           chat.statusMessage = null;
           setTemporaryChatStatus(chat, errorText, 4200);
         }
