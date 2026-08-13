@@ -2567,6 +2567,18 @@
       width: 100%;
     }
 
+    .chat-message-input.console-mode {
+      background: #000;
+      color: #fff;
+      caret-color: #fff;
+      border-color: rgba(255, 255, 255, 0.28);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .chat-message-input.console-mode::placeholder {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
     .mention-menu {
       position: absolute;
       left: 0;
@@ -5466,6 +5478,7 @@
       const consoleMenuHtml = ''
         + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
@@ -6958,6 +6971,8 @@
         handleContextoCommand(chat);
       } else if (command === 'rule') {
         handleRuleCommand(chat);
+      } else if (command === 'powershell') {
+        handlePowerShellCommand(chat);
       } else if (command === 'anclar-archivo') {
         handleAnclarArchivoCommand(chat);
       }
@@ -7214,6 +7229,21 @@
           event.preventDefault();
           workspaceThreeChatSend?.click();
         }
+      });
+    }
+
+    function handlePowerShellCommand(chat) {
+      chat.draftText = '>>> ';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
       });
     }
 
@@ -7605,6 +7635,7 @@
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
           + '<button type="button" class="console-item" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
+          + '<button type="button" class="console-item" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
           + '<button type="button" class="console-item" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
@@ -8013,6 +8044,7 @@
           chat.draftText = chatInput.value;
           chatInput.style.height = 'auto';
           chatInput.style.height = chatInput.scrollHeight + 'px';
+          chatInput.classList.toggle('console-mode', chatInput.value.trim().startsWith('>>>'));
           refreshMentionMenu();
         });
         chatInput.addEventListener('keyup', (event) => {
@@ -8023,6 +8055,7 @@
         if (chat.editingIndex != null) {
           const editingMessage = chat.messages[chat.editingIndex];
           chatInput.value = editingMessage ? (editingMessage.rawText || editingMessage.content || '') : '';
+          chatInput.classList.toggle('console-mode', chatInput.value.trim().startsWith('>>>'));
           requestAnimationFrame(() => {
             chatInput.focus();
             chatInput.select();
@@ -8033,6 +8066,7 @@
             chatInput.style.height = 'auto';
             chatInput.style.height = chatInput.scrollHeight + 'px';
           }
+          chatInput.classList.toggle('console-mode', String(chatInput.value || '').trim().startsWith('>>>'));
           if (justGainedFocus) {
             requestAnimationFrame(() => chatInput.focus());
           }
@@ -9000,6 +9034,20 @@
       return data.choices?.[0]?.message?.content || 'Respuesta recibida.';
     }
 
+    async function callPowerShell(command) {
+      const response = await fetch('/api/powershell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command })
+      });
+      const raw = await response.text();
+      const data = raw ? JSON.parse(raw) : {};
+      if (!response.ok) {
+        throw new Error(data.error || 'No se pudo ejecutar PowerShell.');
+      }
+      return data;
+    }
+
     async function sendMessage(chatId, panel) {
       const chat = chatState.find(item => item.id === chatId);
       if (!chat) return;
@@ -9021,6 +9069,64 @@
         saveChatToStorage(chat);
         renderChats();
         return;
+      }
+
+      if (text.startsWith('>>>')) {
+        const psMessage = {
+          role: 'user',
+          content: text,
+          display: formatMarkdown(text),
+          rawText: text,
+          isRule: true,
+          isPowerShell: true
+        };
+        if (chat.temporalMode) psMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+        chat.messages.push(psMessage);
+        chat.focused = true;
+        chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+        input.value = '';
+        chat.draftText = '';
+        saveChatToStorage(chat);
+        renderChats();
+
+        const command = text.slice(3).trim();
+        if (!command) {
+          setTemporaryChatStatus(chat, 'Escribe un comando PowerShell después de >>>.', 4200);
+          return;
+        }
+
+        const typingMessage = { role: 'assistant', typing: true };
+        chat.messages.push(typingMessage);
+        renderChats();
+        try {
+          const result = await callPowerShell(command);
+          const output = [
+            result.stdout ? result.stdout : '',
+            result.stderr ? ('STDERR:\n' + result.stderr) : ''
+          ].filter(Boolean).join('\n\n');
+          const finalText = output || 'Comando ejecutado sin salida.';
+          const typingIndex = chat.messages.indexOf(typingMessage);
+          const replyMessage = {
+            role: 'assistant',
+            content: finalText,
+            display: formatMarkdown(finalText),
+            rawText: finalText,
+            isPowerShellResult: true
+          };
+          if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar el comando PowerShell.';
+          const typingIndex = chat.messages.indexOf(typingMessage);
+          const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText), rawText: errorText, isPowerShellResult: true };
+          if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        }
       }
 
       if (text.startsWith('>>')) {
@@ -9164,7 +9270,7 @@
 
       try {
         const engineMessages = chat.messages
-          .filter(message => !message.typing && !message.isRule && !isTemporalMessageExpired(message))
+          .filter(message => !message.typing && !message.isRule && !message.isPowerShell && !isTemporalMessageExpired(message))
           .map(message => ({ role: message.role, content: message.content }));
         if (chat.pinnedFileContext && chat.pinnedFileContext.path) {
           const pinnedFileContext = await resolveFileByMention(chat, chat.pinnedFileContext.path) || chat.pinnedFileContext;
