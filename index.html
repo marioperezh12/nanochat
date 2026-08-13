@@ -4344,6 +4344,109 @@
       };
     }
 
+    function parseRuleSyntax(text) {
+      const source = String(text || '').trim();
+      if (!source.startsWith('>>')) return null;
+      const body = source.slice(2).trim();
+      const references = [...body.matchAll(/@([^\s@#]+)/g)].map(match => match[1]).filter(Boolean);
+      const targets = [...body.matchAll(/#([^\s@#]+)/g)].map(match => match[1]).filter(Boolean);
+      const target = targets.length ? targets[targets.length - 1] : '';
+      const instruction = body
+        .replace(/@([^\s@#]+)/g, '')
+        .replace(/#([^\s@#]+)/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return {
+        execute: true,
+        target,
+        references,
+        instruction
+      };
+    }
+
+    async function buildRuleContextMessage(chat, rule) {
+      const references = [];
+      for (const reference of Array.isArray(rule.references) ? rule.references : []) {
+        const file = await resolveFileByMention(chat, reference);
+        if (!file) continue;
+        references.push(file);
+      }
+      const chunks = [];
+      references.forEach(file => {
+        chunks.push('[Archivo referenciado: ' + file.path + ']');
+        chunks.push(file.content || '[Contenido no disponible]');
+        chunks.push('');
+      });
+      if (rule.instruction) chunks.push(rule.instruction);
+      return { text: chunks.join('\n').trim(), references };
+    }
+
+    async function executeRuleMessage(chat, rawText) {
+      const rule = parseRuleSyntax(rawText);
+      if (!rule || !rule.execute) return false;
+      if (!rule.target) {
+        setTemporaryChatStatus(chat, 'La regla >> debe indicar un destino con #Chat.', 4200);
+        return true;
+      }
+      const targetChat = getChatByName(rule.target);
+      if (!targetChat) {
+        setTemporaryChatStatus(chat, 'No encontré el chat destino #' + rule.target + '.', 4200);
+        return true;
+      }
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        setTemporaryChatStatus(chat, 'Conecta tu API key de ' + engineName + ' para ejecutar la regla.', 4200);
+        return true;
+      }
+
+      const ruleContext = await buildRuleContextMessage(chat, rule);
+      const typingMessage = { role: 'assistant', typing: true };
+      chat.messages.push(typingMessage);
+      renderChats();
+
+      try {
+        const engineMessages = [];
+        if (chat.contextMessage && chat.contextMessage.content) {
+          engineMessages.push({ role: 'user', content: '[Contexto]: ' + chat.contextMessage.content });
+        }
+        if (ruleContext.text) {
+          engineMessages.push({ role: 'user', content: '[Regla]: ' + ruleContext.text });
+        }
+        engineMessages.push({ role: 'user', content: rule.instruction || rawText });
+
+        let reply;
+        if (selectedEngine === 'gemini') reply = await callGemini(engineMessages, activeKey);
+        else if (selectedEngine === 'groq') reply = await callGroq(engineMessages, activeKey);
+        else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
+        else reply = await callOpenAI(engineMessages, activeKey);
+
+        const typingIndex = chat.messages.indexOf(typingMessage);
+        const replyMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply), rawText: reply };
+        if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+        if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+        saveChatToStorage(chat);
+        renderChats();
+
+        const destinationMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply), rawText: reply };
+        if (targetChat.temporalMode) destinationMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+        targetChat.messages.push(destinationMessage);
+        targetChat.focused = true;
+        chatState.forEach(item => { if (item.id !== targetChat.id) item.focused = false; });
+        saveChatToStorage(targetChat);
+        renderChats();
+        return true;
+      } catch (error) {
+        const errorText = error && error.message ? error.message : ('No se pudo ejecutar la regla en ' + engineName + '.');
+        const typingIndex = chat.messages.indexOf(typingMessage);
+        const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText), rawText: errorText };
+        if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
+        saveChatToStorage(chat);
+        renderChats();
+        return true;
+      }
+    }
+
     function getMentionStateFromInput(value, caretIndex) {
       const text = String(value || '');
       const caret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : text.length, text.length));
@@ -8873,6 +8976,13 @@
         saveChatToStorage(chat);
         renderChats();
         return;
+      }
+
+      if (text.startsWith('>>')) {
+        input.value = '';
+        chat.draftText = '';
+        const handled = await executeRuleMessage(chat, text);
+        if (handled) return;
       }
 
       const ramasParalelasMatch = text.match(/^\/ramas-paralelas(?:\s+([\s\S]*))?$/i);
