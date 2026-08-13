@@ -9080,7 +9080,7 @@
     }
 
     async function callPowerShell(command) {
-      const response = await fetch('/api/powershell', {
+      const response = await fetch('http://localhost:3210/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command })
@@ -9088,7 +9088,7 @@
       const raw = await response.text();
       const data = raw ? JSON.parse(raw) : {};
       if (!response.ok) {
-        throw new Error(data.error || 'No se pudo ejecutar PowerShell.');
+        throw new Error(data.error || data.message || 'No se pudo ejecutar PowerShell.');
       }
       return data;
     }
@@ -9118,6 +9118,11 @@
       term.writeln('NanoChat PowerShell');
       term.writeln('Escribe comandos usando >>> en la caja del chat.');
       term.writeln('');
+      const history = Array.isArray(chat._powerShellLines) ? chat._powerShellLines : [];
+      history.forEach((line) => {
+        if (!line || typeof line.text !== 'string') return;
+        term.writeln((line.prefix || '') + line.text);
+      });
       chat._powerShellTerminal = term;
       chat._powerShellHost = host;
       return term;
@@ -9128,9 +9133,12 @@
       const term = ensurePowerShellTerminal(chat, panel);
       if (!term) return;
       const value = String(text);
+      if (!Array.isArray(chat._powerShellLines)) chat._powerShellLines = [];
       if (kind === 'command') {
+        chat._powerShellLines.push({ kind, prefix: 'PS> ', text: value });
         term.writeln('PS> ' + value);
       } else {
+        chat._powerShellLines.push({ kind, prefix: '', text: value });
         term.writeln(value);
       }
       try { panel.querySelector('.powershell-terminal')?.scrollIntoView({ block: 'end' }); } catch (error) { }
@@ -9190,11 +9198,25 @@
         renderChats();
         try {
           const result = await callPowerShell(command);
-          const output = [
-            result.stdout ? result.stdout : '',
-            result.stderr ? ('STDERR:\n' + result.stderr) : ''
-          ].filter(Boolean).join('\n\n');
-          const finalText = output || 'Comando ejecutado sin salida.';
+          if (result.cancelled) {
+            const cancelledText = result.message || 'Ejecución cancelada.';
+            appendPowerShellLine(chat, panel, cancelledText, 'output');
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            const cancelledMessage = {
+              role: 'assistant',
+              content: cancelledText,
+              display: formatMarkdown(cancelledText),
+              rawText: cancelledText,
+              isPowerShellResult: true
+            };
+            if (chat.temporalMode) cancelledMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+            if (typingIndex !== -1) chat.messages[typingIndex] = cancelledMessage; else chat.messages.push(cancelledMessage);
+            saveChatToStorage(chat);
+            renderChats();
+            return;
+          }
+
+          const finalText = result.output || result.stdout || result.stderr || 'Comando ejecutado sin salida.';
           appendPowerShellLine(chat, panel, finalText, 'output');
           const typingIndex = chat.messages.indexOf(typingMessage);
           const replyMessage = {
