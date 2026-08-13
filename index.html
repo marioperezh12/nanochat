@@ -9494,6 +9494,39 @@
       return loadConnectionProfiles().find(profile => String(profile && profile.id || '').trim() === id) || null;
     }
 
+    function parseLocalExecSyntax(text) {
+      const source = String(text || '').trim();
+      const match = source.match(/^>>>\s*exec:([a-z0-9_-]+)\s+\$([a-z0-9_-]+)(?:\s*->\s*([\s\S]+))?\s*$/i);
+      if (!match) return null;
+      return {
+        action: 'exec',
+        executor: String(match[1] || '').toLowerCase(),
+        profileId: String(match[2] || '').trim(),
+        afterInstruction: String(match[3] || '').trim() || null
+      };
+    }
+
+    function buildSqlAfterInstructionContext(profileId, sqlText, resultText) {
+      return [
+        '---',
+        'ACCIÓN EJECUTADA',
+        '',
+        'Executor:',
+        'sql',
+        '',
+        'Perfil:',
+        '$' + profileId,
+        '',
+        'SQL ejecutado:',
+        '```sql',
+        String(sqlText || '').trim(),
+        '```',
+        '',
+        'Resultado:',
+        String(resultText || '').trim()
+      ].join('\n').trim();
+    }
+
     function ensurePowerShellTerminal(chat, panel) {
       if (!chat || !panel) return null;
       const host = panel.querySelector('.powershell-terminal');
@@ -9583,8 +9616,9 @@
       const execMatch = text.match(/^>>>\s*exec:([a-z0-9_-]+)\s*\n?([\s\S]*)$/i);
       if (execMatch) {
         const type = String(execMatch[1] || '').toLowerCase();
-        const profileIdMatch = text.match(/^>>>\s*exec:([a-z0-9_-]+)\s+\$([a-z0-9_-]+)\s*$/i);
-        const profileId = profileIdMatch ? String(profileIdMatch[2] || '').trim() : '';
+        const localExec = parseLocalExecSyntax(text);
+        const profileId = localExec ? localExec.profileId : '';
+        const afterInstruction = localExec ? localExec.afterInstruction : null;
         const pendingExecution = chat.pendingExecution && chat.pendingExecution.type === type ? chat.pendingExecution : null;
         const execMessage = {
           role: 'user',
@@ -9661,6 +9695,26 @@
             chat.pendingExecution = null;
             saveChatToStorage(chat);
             renderChats();
+
+            if (afterInstruction) {
+              const targetMatch = afterInstruction.match(/#([^\s]+)/);
+              const targetChatName = targetMatch ? targetMatch[1] : '';
+              if (targetChatName) {
+                const targetChat = getChatByName(targetChatName);
+                if (targetChat) {
+                  const contextText = buildSqlAfterInstructionContext(profileId, script, finalText);
+                  const syntheticRule = '>> #' + targetChat.name + ' ' + contextText + '\n\n' + afterInstruction;
+                  try {
+                    await executeRuleMessage(chat, syntheticRule);
+                  } catch (afterError) {
+                    const afterErrorText = afterError && afterError.message ? afterError.message : 'No se pudo ejecutar la instrucción posterior.';
+                    setTemporaryChatStatus(chat, afterErrorText, 5200);
+                  }
+                } else {
+                  setTemporaryChatStatus(chat, 'No encontré el chat destino #' + targetChatName + '.', 4200);
+                }
+              }
+            }
           } catch (error) {
             const errorText = error && error.message ? error.message : 'No se pudo ejecutar SQL.';
             appendPowerShellLine(chat, panel, errorText, 'output');
