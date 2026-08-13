@@ -1797,6 +1797,23 @@
       color: var(--text);
     }
 
+    .folder-tree-branch>.folder-tree-item.folder-tree-folder {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .folder-tree-branch>.folder-tree-item.folder-tree-folder:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .folder-tree-children {
+      margin-top: 2px;
+    }
+
+    .folder-tree-branch.expanded>.folder-tree-item.folder-tree-folder .folder-tree-label {
+      color: #41d6c7;
+    }
+
     .folder-tree-file>.folder-tree-label {
       color: var(--muted);
     }
@@ -4497,6 +4514,17 @@
       if (!Array.isArray(node.children)) return null;
       for (const child of node.children) {
         const found = findFolderTreeFileNode(child, path);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function findFolderTreeFolderNode(node, path) {
+      if (!node || !path) return null;
+      if (node.type === 'folder' && node.path === path) return node;
+      if (!Array.isArray(node.children)) return null;
+      for (const child of node.children) {
+        const found = findFolderTreeFolderNode(child, path);
         if (found) return found;
       }
       return null;
@@ -8260,6 +8288,22 @@
 
         if (folderBody) {
           folderBody.addEventListener('click', (event) => {
+            const folderToggle = event.target.closest('.folder-tree-folder');
+            if (folderToggle) {
+              event.preventDefault();
+              event.stopPropagation();
+              const branch = folderToggle.closest('.folder-tree-branch');
+              const folderPath = branch && branch.getAttribute('data-folder-path');
+              const folderSelection = chat.folderSelection && chat.folderSelection.tree;
+              const folderNode = folderSelection && folderPath
+                ? findFolderTreeFolderNode(folderSelection, folderPath)
+                : null;
+              if (!folderNode) return;
+              folderNode.expanded = !folderNode.expanded;
+              saveChatToStorage(chat);
+              renderChats();
+              return;
+            }
             const folderFileLink = event.target.closest('.folder-tree-file-link');
             if (!folderFileLink) return;
             event.preventDefault();

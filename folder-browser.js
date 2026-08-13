@@ -28,7 +28,7 @@
   }
 
   function createFolderNode(name, path) {
-    return { type: 'folder', name: name || '', path: path || '', children: [] };
+    return { type: 'folder', name: name || '', path: path || '', children: [], expanded: false };
   }
 
   function createFileNode(name, path, file) {
@@ -154,12 +154,13 @@
             + '<span class="folder-tree-meta">' + escapeHtml(formatSize(child.size)) + '</span>'
             + '</li>';
         }
-        return '<li class="folder-tree-branch">'
-          + '<div class="folder-tree-item folder-tree-folder">'
-          + '<span class="folder-tree-label">📁 ' + escapeHtml(child.name) + '</span>'
+        const expanded = Boolean(child.expanded);
+        return '<li class="folder-tree-branch' + (expanded ? ' expanded' : '') + '" data-folder-path="' + escapeHtml(child.path || '') + '">'
+          + '<div class="folder-tree-item folder-tree-folder" role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '">'
+          + '<span class="folder-tree-label">📁 ' + (expanded ? '▾ ' : '▸ ') + escapeHtml(child.name) + '</span>'
           + '<span class="folder-tree-meta">' + escapeHtml((Array.isArray(child.children) ? child.children.length : 0) + ' items') + '</span>'
           + '</div>'
-          + renderNodeList(child.children)
+          + '<div class="folder-tree-children"' + (expanded ? '' : ' hidden') + '>' + renderNodeList(child.children) + '</div>'
           + '</li>';
       }).join('')
       + '</ul>';
