@@ -396,10 +396,199 @@
       gap: 10px;
     }
 
+    .modal-box.modal-wide {
+      width: 860px;
+      max-width: 94vw;
+    }
+
     .modal-box h2 {
       margin: 0 0 4px;
       font-size: 0.92rem;
       color: var(--text);
+    }
+
+    .modal-textarea {
+      min-height: 380px;
+      width: 100%;
+      resize: vertical;
+      border: 1px solid var(--border);
+      background: rgba(3, 10, 14, 0.92);
+      color: #d8f3ff;
+      border-radius: 4px;
+      padding: 12px 14px;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      font-family: Consolas, ui-monospace, SFMono-Regular, monospace;
+      white-space: pre;
+      tab-size: 2;
+      outline: none;
+    }
+
+    .modal-textarea:focus {
+      border-color: #41d6c7;
+      box-shadow: 0 0 0 1px rgba(65, 214, 199, 0.2);
+    }
+
+    .modal-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modal-icon-btn {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+    }
+
+    .profile-modal-layout {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      min-height: 240px;
+    }
+
+    .profile-menu {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 220px;
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-self: start;
+    }
+
+    .profile-menu-title,
+    .profile-panel-title {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding-bottom: 2px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+
+    .profile-menu[hidden] {
+      display: none;
+    }
+
+    .profile-menu-item {
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 8px 10px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+
+    .profile-menu-item.active {
+      border-color: #41d6c7;
+      color: #41d6c7;
+    }
+
+    .profile-panel {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .profile-panel[hidden] {
+      display: none;
+    }
+
+    .profile-field-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .profile-field-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    .profile-field-table td {
+      border-bottom: 1px solid var(--border);
+      padding: 8px 6px;
+      vertical-align: middle;
+    }
+
+    .profile-field-table td:first-child {
+      width: 170px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .profile-field-table input {
+      width: 100%;
+    }
+
+    .profile-summary-wrap {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.02);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow: auto;
+    }
+
+    .profile-menu[hidden] {
+      display: none;
+    }
+
+    .profile-modal-layout.menu-open .profile-panel {
+      margin-left: 232px;
+    }
+
+    .profile-summary-wrap[hidden] {
+      display: none;
+    }
+
+    .profile-summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+
+    .profile-summary-table td {
+      border-bottom: 1px solid var(--border);
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+
+    .profile-summary-table td:first-child {
+      width: 130px;
+      color: var(--muted);
+      font-weight: 700;
     }
 
     .modal-field-label {
@@ -421,7 +610,7 @@
     }
 
     .modal-box textarea {
-      min-height: 130px;
+      min-height: 400px;
       resize: vertical;
     }
 
@@ -3392,6 +3581,7 @@
                 <button type="button" class="settings-item" id="setKeyMenuItem">Establecer API key</button>
                 <button type="button" class="settings-item" id="importChatMenuItem">Importar chat</button>
                 <button type="button" class="settings-item" id="privacyMenuItem">Configurar privacidad</button>
+                <button type="button" class="settings-item" id="connectionProfilesMenuItem">Perfiles de conexión</button>
               </div>
             </div>
            
@@ -3464,6 +3654,19 @@
     </div>
   </div>
 
+  <div id="connectionProfilesModalOverlay" class="modal-overlay" hidden>
+    <div class="modal-box modal-wide">
+      <h2>Perfiles de conexion</h2>
+      <label class="modal-field-label" for="connectionProfilesJsonInput">JSON de perfiles</label>
+      <textarea id="connectionProfilesJsonInput" class="modal-textarea" spellcheck="false"
+        placeholder='Pega aquí un JSON como: [{"id":"COPELEC_DESA","name":"Copelec Desarrollo"}]'></textarea>
+      <div class="modal-actions">
+        <button type="button" id="connectionProfilesSaveBtn" title="Guardar perfil">&#128190;</button>
+      </div>
+      <div id="connectionProfilesStatus" class="connect-status"></div>
+    </div>
+  </div>
+
   <script>
     const chatGrid = document.getElementById('chatGrid');
     const newChatBtn = document.getElementById('newChatBtn');
@@ -3531,6 +3734,11 @@
     const savePrivacyPasswordBtn = document.getElementById('savePrivacyPasswordBtn');
     const closePrivacyModalBtn = document.getElementById('closePrivacyModalBtn');
     const privacyModalStatus = document.getElementById('privacyModalStatus');
+    const connectionProfilesMenuItem = document.getElementById('connectionProfilesMenuItem');
+    const connectionProfilesModalOverlay = document.getElementById('connectionProfilesModalOverlay');
+    const connectionProfilesJsonInput = document.getElementById('connectionProfilesJsonInput');
+    const connectionProfilesSaveBtn = document.getElementById('connectionProfilesSaveBtn');
+    const connectionProfilesStatus = document.getElementById('connectionProfilesStatus');
     const appEl = document.querySelector('.app');
     const sidebar = document.getElementById('sidebar');
     const sidebarList = document.getElementById('sidebarList');
@@ -3574,9 +3782,9 @@
     const WORKSPACE_THREE_STORAGE = 'nanochat_workspace_three';
     const TEMPORAL_MESSAGE_TTL = 120000;
     const PRIVACY_PASSWORD_STORAGE = 'nanochat_privacy_password';
+    const CONNECTION_PROFILES_STORAGE = 'nanochat_connection_profiles';
     const CRYPTO_SALT = 'nanochat-local-salt-v1';
     let restoringWorkspaceThree = false;
-
     async function deriveUserCryptoKey(sub) {
       if (!sub || !window.crypto || !window.crypto.subtle) return null;
       const enc = new TextEncoder();
@@ -4070,6 +4278,44 @@
       try {
         localStorage.setItem(PRIVACY_PASSWORD_STORAGE, await encryptForUser(password));
       } catch (error) { }
+    }
+
+    function openConnectionProfilesModal() {
+      const raw = localStorage.getItem(CONNECTION_PROFILES_STORAGE) || '[]';
+      if (connectionProfilesJsonInput) {
+        try {
+          connectionProfilesJsonInput.value = JSON.stringify(JSON.parse(raw), null, 2);
+        } catch (error) {
+          connectionProfilesJsonInput.value = raw;
+        }
+      }
+      if (connectionProfilesStatus) connectionProfilesStatus.textContent = '';
+      connectionProfilesModalOverlay.hidden = false;
+      connectionProfilesJsonInput?.focus();
+    }
+
+    function closeConnectionProfilesModal() {
+      connectionProfilesModalOverlay.hidden = true;
+    }
+
+    async function saveConnectionProfileFromPanel() {
+      if (!connectionProfilesJsonInput) return;
+      const raw = connectionProfilesJsonInput.value.trim();
+      if (!raw) {
+        connectionProfilesStatus.textContent = 'Pega un JSON válido.';
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          connectionProfilesStatus.textContent = 'El JSON debe ser una lista de perfiles.';
+          return;
+        }
+        localStorage.setItem(CONNECTION_PROFILES_STORAGE, JSON.stringify(parsed, null, 2));
+        connectionProfilesStatus.textContent = 'Guardado.';
+      } catch (error) {
+        connectionProfilesStatus.textContent = 'JSON inválido.';
+      }
     }
 
     function openPrivacyPasswordModal() {
@@ -9960,6 +10206,24 @@
       privacyModalOverlay.addEventListener('click', (event) => {
         if (event.target === privacyModalOverlay) closePrivacyPasswordModal();
       });
+    }
+
+    if (connectionProfilesMenuItem) {
+      connectionProfilesMenuItem.addEventListener('click', () => {
+        workspaceSettings?.classList.remove('open');
+        openConnectionProfilesModal();
+      });
+    }
+    if (connectionProfilesSaveBtn) {
+      connectionProfilesSaveBtn.addEventListener('click', saveConnectionProfileFromPanel);
+    }
+    if (connectionProfilesModalOverlay) {
+      connectionProfilesModalOverlay.addEventListener('click', (event) => {
+        if (event.target === connectionProfilesModalOverlay) closeConnectionProfilesModal();
+      });
+    }
+    if (connectionProfilesStatus) {
+      connectionProfilesStatus.textContent = '';
     }
 
     function setViewMode(mode) {
