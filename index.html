@@ -3630,6 +3630,8 @@
   <div id="importModalOverlay" class="modal-overlay" hidden>
     <div class="modal-box">
       <h2>Importar chat</h2>
+      <label class="modal-field-label" for="importFileInput">Archivo desde tu PC</label>
+      <input id="importFileInput" type="file" accept=".json,.txt,application/json,text/plain" />
       <textarea id="importTextarea" placeholder="Pega aquí la configuración exportada..."></textarea>
       <div class="modal-actions">
         <button type="button" id="loadImportBtn">Cargar</button>
@@ -3723,6 +3725,7 @@
     const setKeyMenuItem = document.getElementById('setKeyMenuItem');
     const importChatMenuItem = document.getElementById('importChatMenuItem');
     const importModalOverlay = document.getElementById('importModalOverlay');
+    const importFileInput = document.getElementById('importFileInput');
     const importTextarea = document.getElementById('importTextarea');
     const loadImportBtn = document.getElementById('loadImportBtn');
     const closeImportModalBtn = document.getElementById('closeImportModalBtn');
@@ -7470,6 +7473,7 @@
 
     function openImportModal() {
       importTextarea.value = '';
+      if (importFileInput) importFileInput.value = '';
       importStatus.textContent = '';
       importModalOverlay.hidden = false;
       importTextarea.focus();
@@ -7479,10 +7483,14 @@
       importModalOverlay.hidden = true;
     }
 
-    function loadImportedChat() {
+    async function loadImportedChat() {
       let parsed;
       try {
-        parsed = JSON.parse(importTextarea.value.trim());
+        let sourceText = importTextarea.value.trim();
+        if (!sourceText && importFileInput && importFileInput.files && importFileInput.files[0]) {
+          sourceText = await importFileInput.files[0].text();
+        }
+        parsed = JSON.parse(sourceText.trim());
       } catch (error) {
         importStatus.textContent = 'JSON inválido.';
         return;
@@ -9832,7 +9840,7 @@
       const hasRealMessages = chat.messages.some(message => !message.typing);
       if (!hasRealMessages) {
         if (chat.responseMode === 'short') {
-          userContent += '\n\n[responde: directo, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
+          userContent += '\n\n[responde: respuesta super corta, directa, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
         } else if (chat.responseMode === 'complex') {
           userContent += '\n\n[responde: con detalle, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
         }
