@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const DB_NAME = 'nanochat-folder-handles';
   const DB_VERSION = 1;
   const STORE_NAME = 'directory-handles';
@@ -38,7 +38,7 @@
       path,
       size: Number(file?.size) || 0,
       mimeType: String(file?.type || ''),
-      previewable: Boolean(/\.(txt|sql|json|ps1)$/i.test(String(name || '')))
+      previewable: Boolean(/\.(txt|sql|json|ps1|ts|js|css)$/i.test(String(name || '')))
     };
     if (file) {
       Object.defineProperty(node, 'fileRef', {
@@ -235,3 +235,4 @@
     flattenFiles
   };
 })();
+

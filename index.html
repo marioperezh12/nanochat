@@ -1269,7 +1269,7 @@
     }
 
     .panel-top {
-      min-height: 44px;
+      min-height: 83px;
       height: auto;
       padding: 8px 12px;
       display: flex;
@@ -4488,7 +4488,7 @@
     }
 
     function isPreviewableFolderFileName(name) {
-      return /\.(txt|sql|json|ps1)$/i.test(String(name || ''));
+      return /\.(txt|sql|json|ps1|ts|js|css)$/i.test(String(name || '')); 
     }
 
     function findFolderTreeFileNode(node, path) {
@@ -4537,7 +4537,7 @@
       } else if (previewPath) {
         bodyHtml = '<div class="folder-preview-empty">Ese tipo de archivo no tiene vista previa.</div>';
       } else {
-        bodyHtml = '<div class="folder-preview-empty">Selecciona un archivo .txt, .sql, .json o .ps1 para ver su contenido.</div>';
+        bodyHtml = '<div class="folder-preview-empty">Selecciona un archivo .txt, .sql, .json, .ps1, .ts, .js o .css para ver su contenido.</div>';
       }
 
       return '<div class="folder-preview-body">' + bodyHtml + '</div>';
@@ -4846,16 +4846,24 @@
       return Boolean(message && message.isRule);
     }
 
+    function isAutocompleteTriggerBoundary(text, index) {
+      if (index <= 0) return true;
+      const previousChar = String(text || '').slice(index - 1, index);
+      return /\s|[([{<>"'`]/.test(previousChar);
+    }
+
     function getMentionStateFromInput(value, caretIndex) {
       const text = String(value || '');
       const caret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : text.length, text.length));
       const beforeCaret = text.slice(0, caret);
       const atIndex = beforeCaret.lastIndexOf('@');
       const dollarIndex = beforeCaret.lastIndexOf('$');
-      const tokenStart = Math.max(atIndex, dollarIndex);
+      const slashIndex = beforeCaret.lastIndexOf('/');
+      const tokenStart = Math.max(atIndex, dollarIndex, slashIndex);
       if (tokenStart === -1) return null;
       const triggerChar = beforeCaret.slice(tokenStart, tokenStart + 1);
-      if (triggerChar !== '@' && triggerChar !== '$') return null;
+      if (triggerChar !== '@' && triggerChar !== '$' && triggerChar !== '/') return null;
+      if (!isAutocompleteTriggerBoundary(beforeCaret, tokenStart)) return null;
       const query = beforeCaret.slice(tokenStart + 1);
       if (/\s/.test(query)) return null;
       return {
@@ -4906,6 +4914,31 @@
         .map(chat => ({ name: chat.name, path: chat.name }));
     }
 
+    function getLocalCommandSuggestions(query) {
+      const normalized = String(query || '').trim().toLowerCase();
+      const commands = [
+        { name: 'contexto', path: 'contexto', desc: 'Fija un mensaje de contexto siempre visible al inicio del chat' },
+        { name: 'anclar-archivo', path: 'anclar-archivo', desc: 'Escribe el comando y luego menciona un archivo para anclarlo' },
+        { name: 'ramas-paralelas', path: 'ramas-paralelas', desc: 'Crea ramas hijas paralelas desde este chat' },
+        { name: 'ramas-secuenciales', path: 'ramas-secuenciales', desc: 'Crea una cadena secuencial de ramas hacia la derecha' },
+        { name: 'multi-ia', path: 'multi-ia', desc: 'Consulta varios motores con el mismo mensaje' },
+        { name: 'resumen-anclados', path: 'resumen-anclados', desc: 'Resume solo los mensajes anclados de este chat' },
+        { name: 'resumen-general', path: 'resumen-general', desc: 'Resume toda la conversacion de este chat' },
+        { name: 'chatsversion', path: 'chatsversion', desc: 'Carga una version anterior guardada de este chat' },
+        { name: 'eliminar', path: 'eliminar', desc: 'Elimina la conversacion actual o una version guardada' }
+      ];
+      return commands
+        .filter(item => !normalized || item.name.toLowerCase().includes(normalized) || item.path.toLowerCase().includes(normalized))
+        .sort((a, b) => {
+          const aName = String(a.name || '').toLowerCase();
+          const bName = String(b.name || '').toLowerCase();
+          const aScore = aName.startsWith(normalized) ? 0 : 1;
+          const bScore = bName.startsWith(normalized) ? 0 : 1;
+          return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
+        })
+        .slice(0, 10);
+    }
+
     function renderMentionMenu(chat, panel, input) {
       const menu = panel?.querySelector('.mention-menu');
       if (!menu || !input) return;
@@ -4919,12 +4952,15 @@
       }
       const isChatTag = Boolean(chatStateMatch && chatStateMatch.tokenStart === state.tokenStart);
       const isConnectionTag = Boolean(fileState && fileState.triggerChar === '$');
+      const isCommandTag = Boolean(fileState && fileState.triggerChar === '/');
       const query = state.query;
       const sourceItems = isChatTag
         ? getChatNameSuggestions(query)
         : isConnectionTag
           ? getConnectionProfileIdSuggestions(query)
-          : getChatFolderFileEntries(chat);
+          : isCommandTag
+            ? getLocalCommandSuggestions(query)
+            : getChatFolderFileEntries(chat);
       const filtered = (query
         ? sourceItems.filter(item => {
           const name = String(item.name || '').toLowerCase();
@@ -4942,7 +4978,7 @@
         return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
       }).slice(0, 10);
       if (!filtered.length) {
-        menu.innerHTML = '<div class="empty-state">' + (isChatTag ? 'Sin chats que coincidan' : isConnectionTag ? 'Sin perfiles de conexión que coincidan' : 'Sin archivos que coincidan') + '</div>';
+        menu.innerHTML = '<div class="empty-state">' + (isChatTag ? 'Sin chats que coincidan' : isConnectionTag ? 'Sin perfiles de conexión que coincidan' : isCommandTag ? 'Sin comandos que coincidan' : 'Sin archivos que coincidan') + '</div>';
         menu.hidden = false;
         menu.classList.add('open');
         chat.mentionSuggestions = [];
@@ -4955,8 +4991,8 @@
       chat.mentionTokenStart = state.tokenStart;
       menu.innerHTML = filtered.map((item, index) => (
         '<button type="button" class="mention-item' + (index === chat.mentionActiveIndex ? ' active' : '') + '" data-mention-index="' + index + '" data-mention-path="' + escapeHtml(item.path) + '">'
-        + '<span class="mention-item-name">' + (isChatTag ? '#' : isConnectionTag ? '$' : '@') + escapeHtml(item.name || item.path) + '</span>'
-        + '<span class="mention-item-path">' + escapeHtml(item.path || '') + '</span>'
+        + '<span class="mention-item-name">' + (isChatTag ? '#' : isConnectionTag ? '$' : isCommandTag ? '/' : '@') + escapeHtml(item.name || item.path) + '</span>'
+        + '<span class="mention-item-path">' + escapeHtml(isCommandTag ? (item.desc || '') : (item.path || '')) + '</span>'
         + '</button>'
       )).join('');
       menu.hidden = false;
@@ -4972,10 +5008,10 @@
       const item = suggestions[safeIndex];
       if (!item) return;
       const caret = input.selectionStart ?? input.value.length;
-      const tokenStart = Number.isFinite(chat.mentionTokenStart) ? chat.mentionTokenStart : Math.max(input.value.lastIndexOf('@', caret), input.value.lastIndexOf('#', caret));
+      const tokenStart = Number.isFinite(chat.mentionTokenStart) ? chat.mentionTokenStart : Math.max(input.value.lastIndexOf('@', caret), input.value.lastIndexOf('#', caret), input.value.lastIndexOf('$', caret), input.value.lastIndexOf('/', caret));
       const start = tokenStart >= 0 ? tokenStart : caret;
-      const triggerChar = input.value.slice(start, start + 1) === '#' ? '#' : (input.value.slice(start, start + 1) === '$' ? '$' : '@');
-      const nextValue = input.value.slice(0, start) + triggerChar + (item.path || item.name || '') + ' ' + input.value.slice(caret);
+      const triggerChar = input.value.slice(start, start + 1) === '#' ? '#' : (input.value.slice(start, start + 1) === '$' ? '$' : (input.value.slice(start, start + 1) === '/' ? '/' : '@'));
+      const nextValue = input.value.slice(0, start) + triggerChar + (triggerChar === '/' ? (item.path || item.name || '') : (item.path || item.name || '')) + ' ' + input.value.slice(caret);
       input.value = nextValue;
       input.focus();
       const nextCaret = (input.value.slice(0, start) + triggerChar + (item.path || item.name || '') + ' ').length;
@@ -7393,7 +7429,7 @@
     }
 
     function handleContextoCommand(chat) {
-      chat.draftText = '/contexto: ' + (chat.contextMessage ? (chat.contextMessage.rawText || chat.contextMessage.content || '') : '');
+      chat.draftText = '/contexto /resumen-general #';
       renderChats();
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
@@ -7506,7 +7542,7 @@
 
     function handleWorkspaceThreeContextoCommand(state) {
       const current = state.contextMessage ? (state.contextMessage.rawText || '') : '';
-      setWorkspaceThreeInputCommand(state, '/contexto: ' + current);
+      setWorkspaceThreeInputCommand(state, '/contexto /resumen-general #');
     }
 
     function handleWorkspaceThreeMultiIaCommandShortcut(state) {
@@ -8683,7 +8719,7 @@
             event.stopPropagation();
             const text = chat.contextMessage ? (chat.contextMessage.rawText || chat.contextMessage.content || '') : '';
             if (!text) return;
-            chat.draftText = '/contexto: ' + text;
+            chat.draftText = '/contexto /resumen-general #' + (chat.name || '');
             chat.editingIndex = null;
             renderChats();
             requestAnimationFrame(() => {
@@ -9643,7 +9679,7 @@
       const text = input.value.trim();
       if (!text) return;
 
-      const contextoMatch = text.match(/^\/contexto(?:\s*:\s*|\s+)([\s\S]*)$/is);
+      const contextoMatch = text.match(/^\/contexto(?:\s+([\s\S]*))?$/is);
       if (contextoMatch) {
         const contextoArg = (contextoMatch[1] || '').trim();
         chat.focused = true;
@@ -9657,20 +9693,24 @@
 
 
 
-        const chatRefMatch = contextoArg.match(/^#([^\s]+(?:\s+[^\s]+)*)$/);
-        if (chatRefMatch) {
-          const targetChatName = String(chatRefMatch[1] || '').trim();
+        const directTargetMatch = contextoArg.match(/^#([^\s]+(?:\s+[^\s]+)*)$/);
+        const resumenGeneralMatch = contextoArg.match(/^\/resumen-general\s+#([^\s]+(?:\s+[^\s]+)*)$/i);
+        const resumenAncladosMatch = contextoArg.match(/^\/resumen-anclados\s+#([^\s]+(?:\s+[^\s]+)*)$/i);
+
+        if (resumenGeneralMatch || resumenAncladosMatch) {
+          const targetChatName = String((resumenGeneralMatch || resumenAncladosMatch)[1] || '').trim();
           const targetChat = getChatByName(targetChatName);
           if (!targetChat) {
             const typingIndex = chat.messages.indexOf(typingMessage);
             if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
             saveChatToStorage(chat);
             renderChats();
-            setTemporaryChatStatus(chat, 'No encontré el chat destino #' + targetChatName + '.', 4200);
+            setTemporaryChatStatus(chat, 'No encontr� el chat destino #' + targetChatName + '.', 4200);
             return;
           }
           try {
-            const contextoText = await buildChatSummaryText(targetChat, 'general');
+            const summaryType = resumenGeneralMatch ? 'general' : 'anclados';
+            const contextoText = await buildChatSummaryText(targetChat, summaryType);
             const typingIndex = chat.messages.indexOf(typingMessage);
             if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
             chat.contextMessage = contextoText
@@ -9686,6 +9726,34 @@
           }
         }
 
+        if (directTargetMatch) {
+          const targetChatName = String(directTargetMatch[1] || '').trim();
+          const targetChat = getChatByName(targetChatName);
+          if (!targetChat) {
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
+            saveChatToStorage(chat);
+            renderChats();
+            setTemporaryChatStatus(chat, 'No encontr� el chat destino #' + targetChatName + '.', 4200);
+            return;
+          }
+          const typingIndex = chat.messages.indexOf(typingMessage);
+          if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
+          chat.contextMessage = targetChat.contextMessage
+            ? {
+                content: targetChat.contextMessage.content || targetChat.contextMessage.rawText || '',
+                display: targetChat.contextMessage.display || formatMarkdown(targetChat.contextMessage.content || targetChat.contextMessage.rawText || ''),
+                rawText: targetChat.contextMessage.rawText || targetChat.contextMessage.content || ''
+              }
+            : null;
+          chat._contextScrollDone = false;
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        }
+
+        const typingIndex = chat.messages.indexOf(typingMessage);
+        if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
         chat.contextMessage = contextoArg
           ? { content: contextoArg, display: formatMarkdown(contextoArg), rawText: contextoArg }
           : null;
@@ -10703,6 +10771,10 @@
 </body>
 
 </html>
+
+
+
+
 
 
 
