@@ -4726,11 +4726,14 @@
       if (!source.startsWith('>>')) return null;
       const body = source.slice(2).trim();
       const references = [...body.matchAll(/@([^\s@#]+)/g)].map(match => match[1]).filter(Boolean);
-      const targets = [...body.matchAll(/#([^\s@#]+)/g)].map(match => match[1]).filter(Boolean);
+      const targetMatches = [...body.matchAll(/#(?:"([^"]+)"|([^\s@#][^\n\r]*?))(?:\s|$)/g)];
+      const targets = targetMatches
+        .map(match => String(match[1] || match[2] || '').trim())
+        .filter(Boolean);
       const target = targets.length ? targets[targets.length - 1] : '';
       const instruction = body
         .replace(/@([^\s@#]+)/g, '')
-        .replace(/#([^\s@#]+)/g, '')
+        .replace(/#(?:"([^"]+)"|([^\s@#][^\n\r]*?))(?:\s|$)/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       return {
@@ -7291,6 +7294,49 @@
       }
     }
 
+    async function buildChatSummaryText(chat, scope) {
+      const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
+      const viewingVersion = chat.viewingVersionId ? chatVersions.find(v => v.id === chat.viewingVersionId) : null;
+      const activeMessages = viewingVersion ? viewingVersion.messages : chat.messages;
+      const activePinnedIndices = viewingVersion ? (viewingVersion.pinnedIndices || []) : chat.pinnedIndices;
+
+      let transcript;
+      if (scope === 'general') {
+        const hasMessages = activeMessages.some(message => !message.typing && !isTemporalMessageExpired(message));
+        if (!hasMessages) throw new Error('No hay mensajes en la conversación para resumir.');
+        transcript = buildFullConversationText(activeMessages);
+      } else {
+        const hasPinned = activePinnedIndices.some(idx => activeMessages[idx] && !activeMessages[idx].typing && !isTemporalMessageExpired(activeMessages[idx]));
+        if (!hasPinned) throw new Error('No hay mensajes anclados para resumir.');
+        transcript = buildPinnedConversationText(activeMessages, activePinnedIndices);
+      }
+
+      const engineName = engineLabel(selectedEngine);
+      const activeKey = getEngineKey(selectedEngine);
+      if (!activeKey) throw new Error('Conecta tu API key de ' + engineName + ' para generar el resumen.');
+
+      const summaryInstruction = 'Resume la siguiente conversaciÃ³n siguiendo EXACTAMENTE esta plantilla de formato:\n\n'
+        + '[PÃ¡rrafo breve de 1-2 frases con la intenciÃ³n general de la conversaciÃ³n, de quÃ© se trata todo]\n\n'
+        + '- [Punto o paso 1, redactado como intenciÃ³n/acciÃ³n directa, ej: "Instalar imagen de YOLOv5"]\n'
+        + '```\n[comando exacto si el punto 1 tiene uno, en su propia lÃ­nea, nunca mezclado con el texto]\n```\n'
+        + '- [Punto o paso 2]\n'
+        + '```\n[comando del punto 2, si aplica]\n```\n\n'
+        + 'Reglas: cada bloque de comando va SIEMPRE en su propia lÃ­nea encerrado entre triple backtick (```), nunca dentro de la misma lÃ­nea del punto ni como texto plano. '
+        + 'Si un punto no tiene comando, omite el bloque para ese punto. '
+        + 'No uses el formato "Usuario: ..." ni "Asistente: ...". '
+        + 'No incluyas comentarios sobre lo que hizo el asistente si no aportan informaciÃ³n nueva (por ejemplo, evita frases como "Asistente: proporciona el comando").\n\n'
+        + 'ConversaciÃ³n a resumir:\n\n';
+      const engineMessages = [
+        { role: 'user', content: summaryInstruction + transcript }
+      ];
+      let reply;
+      if (selectedEngine === 'gemini') reply = await callGemini(engineMessages, activeKey);
+      else if (selectedEngine === 'groq') reply = await callGroq(engineMessages, activeKey);
+      else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
+      else reply = await callOpenAI(engineMessages, activeKey);
+      return reply;
+    }
+
     function handleDeleteVersionClick(chat, versionId) {
       const chatVersions = Array.isArray(chat.versions) ? chat.versions : [];
       if (!versionId) {
@@ -9597,17 +9643,53 @@
       const text = input.value.trim();
       if (!text) return;
 
-      const contextoMatch = text.match(/^\/contexto:\s*(.*)$/is);
+      const contextoMatch = text.match(/^\/contexto(?:\s*:\s*|\s+)([\s\S]*)$/is);
       if (contextoMatch) {
-        const contextoText = contextoMatch[1].trim();
-        chat.contextMessage = contextoText
-          ? { content: contextoText, display: formatMarkdown(contextoText), rawText: contextoText }
-          : null;
-        chat._contextScrollDone = false;
+        const contextoArg = (contextoMatch[1] || '').trim();
         chat.focused = true;
         chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
         input.value = '';
         chat.draftText = '';
+        const typingMessage = { role: 'assistant', typing: true };
+        chat.messages.push(typingMessage);
+        saveChatToStorage(chat);
+        renderChats();
+
+
+
+        const chatRefMatch = contextoArg.match(/^#([^\s]+(?:\s+[^\s]+)*)$/);
+        if (chatRefMatch) {
+          const targetChatName = String(chatRefMatch[1] || '').trim();
+          const targetChat = getChatByName(targetChatName);
+          if (!targetChat) {
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
+            saveChatToStorage(chat);
+            renderChats();
+            setTemporaryChatStatus(chat, 'No encontré el chat destino #' + targetChatName + '.', 4200);
+            return;
+          }
+          try {
+            const contextoText = await buildChatSummaryText(targetChat, 'general');
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
+            chat.contextMessage = contextoText
+              ? { content: contextoText, display: formatMarkdown(contextoText), rawText: contextoText }
+              : null;
+            chat._contextScrollDone = false;
+            saveChatToStorage(chat);
+            renderChats();
+            return;
+          } catch (error) {
+            setTemporaryChatStatus(chat, error && error.message ? error.message : 'No se pudo generar el contexto del chat.', 5200);
+            return;
+          }
+        }
+
+        chat.contextMessage = contextoArg
+          ? { content: contextoArg, display: formatMarkdown(contextoArg), rawText: contextoArg }
+          : null;
+        chat._contextScrollDone = false;
         saveChatToStorage(chat);
         renderChats();
         return;
@@ -10621,6 +10703,7 @@
 </body>
 
 </html>
+
 
 
 
