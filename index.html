@@ -8785,9 +8785,9 @@
                 const execType = lang === 'ps' ? 'powershell' : lang;
                 input.value = '>>> exec:' + execType;
                 chat.draftText = input.value;
-                chat._pendingExec = {
+                chat.pendingExecution = {
                   type: execType,
-                  script: code
+                  code
                 };
                 saveChatToStorage(chat);
                 renderChats();
@@ -9478,6 +9478,22 @@
       return data;
     }
 
+    function loadConnectionProfiles() {
+      try {
+        const raw = localStorage.getItem(CONNECTION_PROFILES_STORAGE) || '[]';
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function getConnectionProfileById(profileId) {
+      const id = String(profileId || '').trim();
+      if (!id) return null;
+      return loadConnectionProfiles().find(profile => String(profile && profile.id || '').trim() === id) || null;
+    }
+
     function ensurePowerShellTerminal(chat, panel) {
       if (!chat || !panel) return null;
       const host = panel.querySelector('.powershell-terminal');
@@ -9567,7 +9583,9 @@
       const execMatch = text.match(/^>>>\s*exec:([a-z0-9_-]+)\s*\n?([\s\S]*)$/i);
       if (execMatch) {
         const type = String(execMatch[1] || '').toLowerCase();
-        const payloadText = String(execMatch[2] || '').trim() || String(chat._pendingExec && chat._pendingExec.type === type ? chat._pendingExec.script : '').trim();
+        const profileIdMatch = text.match(/^>>>\s*exec:([a-z0-9_-]+)\s+\$([a-z0-9_-]+)\s*$/i);
+        const profileId = profileIdMatch ? String(profileIdMatch[2] || '').trim() : '';
+        const pendingExecution = chat.pendingExecution && chat.pendingExecution.type === type ? chat.pendingExecution : null;
         const execMessage = {
           role: 'user',
           content: text,
@@ -9584,10 +9602,85 @@
         chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
         input.value = '';
         chat.draftText = '';
-        chat._pendingExec = null;
         saveChatToStorage(chat);
         renderChats();
 
+        if (type === 'sql') {
+          if (!profileId) {
+            setTemporaryChatStatus(chat, 'Falta el id del perfil: usa >>> exec:sql $ID_PERFIL.', 5200);
+            return;
+          }
+          const profile = getConnectionProfileById(profileId);
+          if (!profile) {
+            setTemporaryChatStatus(chat, 'No existe el perfil de conexión $' + profileId + '.', 5200);
+            return;
+          }
+          if (!profile.enabled) {
+            setTemporaryChatStatus(chat, 'El perfil $' + profileId + ' está deshabilitado.', 5200);
+            return;
+          }
+          if (!pendingExecution) {
+            setTemporaryChatStatus(chat, 'No hay SQL pendiente para ejecutar. Usa el botón >_ sobre un bloque SQL.', 5200);
+            return;
+          }
+          if (pendingExecution.type !== 'sql') {
+            setTemporaryChatStatus(chat, 'El SQL pendiente no coincide con el ejecutor solicitado.', 5200);
+            return;
+          }
+          const script = String(pendingExecution.code || '');
+          if (!script.trim()) {
+            setTemporaryChatStatus(chat, 'El bloque SQL pendiente está vacío.', 5200);
+            return;
+          }
+
+          appendPowerShellLine(chat, panel, '$' + profileId, 'command');
+          appendPowerShellLine(chat, panel, script, 'command');
+
+          const typingMessage = { role: 'assistant', typing: true };
+          chat.messages.push(typingMessage);
+          renderChats();
+
+          try {
+            const result = await callExecutor('sql', {
+              connection: profile,
+              script
+            });
+            const finalText = result.output || result.stdout || result.stderr || result.message || 'SQL ejecutado sin salida.';
+            appendPowerShellLine(chat, panel, finalText, 'output');
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            const replyMessage = {
+              role: 'assistant',
+              content: finalText,
+              display: formatMarkdown(finalText),
+              rawText: finalText,
+              isExecutorResult: true,
+              executorType: 'sql'
+            };
+            if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+            if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+            chat.pendingExecution = null;
+            saveChatToStorage(chat);
+            renderChats();
+          } catch (error) {
+            const errorText = error && error.message ? error.message : 'No se pudo ejecutar SQL.';
+            appendPowerShellLine(chat, panel, errorText, 'output');
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            const errorMessage = {
+              role: 'assistant',
+              content: errorText,
+              display: escapeHtml(errorText),
+              rawText: errorText,
+              isExecutorResult: true,
+              executorType: 'sql'
+            };
+            if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
+            saveChatToStorage(chat);
+            renderChats();
+          }
+          return;
+        }
+
+        const payloadText = String(execMatch[2] || '').trim() || String(chat.pendingExecution && chat.pendingExecution.type === type ? chat.pendingExecution.code : '').trim();
         if (!payloadText) {
           setTemporaryChatStatus(chat, 'Escribe un comando o script despues de >>> exec:' + type + '.', 4200);
           return;
@@ -9600,9 +9693,7 @@
         renderChats();
 
         try {
-          const result = await callExecutor(type, type === 'sql'
-            ? { script: payloadText }
-            : { command: payloadText });
+          const result = await callExecutor(type, { command: payloadText });
 
           if (result.cancelled) {
             const cancelledText = result.message || (type === 'sql' ? 'Ejecucion SQL cancelada.' : 'Ejecucion cancelada.');
@@ -9619,6 +9710,7 @@
             if (type === 'powershell') cancelledMessage.isPowerShellResult = true;
             if (chat.temporalMode) cancelledMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
             if (typingIndex !== -1) chat.messages[typingIndex] = cancelledMessage; else chat.messages.push(cancelledMessage);
+            if (type === 'powershell') chat.pendingExecution = null;
             saveChatToStorage(chat);
             renderChats();
             return;
@@ -9638,6 +9730,7 @@
           if (type === 'powershell') replyMessage.isPowerShellResult = true;
           if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
           if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+          if (type === 'powershell') chat.pendingExecution = null;
           saveChatToStorage(chat);
           renderChats();
         } catch (error) {
@@ -9674,7 +9767,7 @@
         chat.focused = true;
         chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
         resetPowerShellPrompt(input, chat);
-        chat._pendingExec = null;
+        chat.pendingExecution = null;
         saveChatToStorage(chat);
         renderChats();
 
