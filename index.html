@@ -4401,25 +4401,27 @@
       }
 
       const ruleContext = await buildRuleContextMessage(chat, rule);
+      const runApiWithContext = async (sourceChat, extraMessages, promptText) => {
+        const engineMessages = [];
+        if (sourceChat.contextMessage && sourceChat.contextMessage.content) {
+          engineMessages.push({ role: 'user', content: '[Contexto]: ' + sourceChat.contextMessage.content });
+        }
+        extraMessages.forEach(item => engineMessages.push(item));
+        if (promptText) engineMessages.push({ role: 'user', content: promptText });
+        if (selectedEngine === 'gemini') return await callGemini(engineMessages, activeKey);
+        if (selectedEngine === 'groq') return await callGroq(engineMessages, activeKey);
+        if (selectedEngine === 'deepseek') return await callDeepSeek(engineMessages, activeKey);
+        return await callOpenAI(engineMessages, activeKey);
+      };
+
       const typingMessage = { role: 'assistant', typing: true };
       chat.messages.push(typingMessage);
       renderChats();
 
       try {
-        const engineMessages = [];
-        if (chat.contextMessage && chat.contextMessage.content) {
-          engineMessages.push({ role: 'user', content: '[Contexto]: ' + chat.contextMessage.content });
-        }
-        if (ruleContext.text) {
-          engineMessages.push({ role: 'user', content: '[Regla]: ' + ruleContext.text });
-        }
-        engineMessages.push({ role: 'user', content: rule.instruction || rawText });
-
-        let reply;
-        if (selectedEngine === 'gemini') reply = await callGemini(engineMessages, activeKey);
-        else if (selectedEngine === 'groq') reply = await callGroq(engineMessages, activeKey);
-        else if (selectedEngine === 'deepseek') reply = await callDeepSeek(engineMessages, activeKey);
-        else reply = await callOpenAI(engineMessages, activeKey);
+        const reply = await runApiWithContext(chat, [
+          ...(ruleContext.text ? [{ role: 'user', content: '[Regla]: ' + ruleContext.text }] : [])
+        ], rule.instruction || rawText);
 
         const typingIndex = chat.messages.indexOf(typingMessage);
         const replyMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply), rawText: reply };
@@ -4428,11 +4430,24 @@
         saveChatToStorage(chat);
         renderChats();
 
-        const destinationMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply), rawText: reply };
+        const destinationTyping = { role: 'assistant', typing: true };
+        targetChat.messages.push(destinationTyping);
+        renderChats();
+
+        const destinationPromptParts = [];
+        if (targetChat.contextMessage && targetChat.contextMessage.content) {
+          destinationPromptParts.push({ role: 'user', content: '[Contexto destino]: ' + targetChat.contextMessage.content });
+        }
+        destinationPromptParts.push({ role: 'user', content: '[Acción recibida desde #' + chat.name + ']: ' + reply });
+        const destinationReply = await runApiWithContext(targetChat, destinationPromptParts, targetChat.draftText || 'Reacciona a la acción recibida y responde en consecuencia.');
+
+        const destinationTypingIndex = targetChat.messages.indexOf(destinationTyping);
+        const destinationMessage = { role: 'assistant', content: destinationReply, display: formatMarkdown(destinationReply), rawText: destinationReply };
         if (targetChat.temporalMode) destinationMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
-        targetChat.messages.push(destinationMessage);
+        if (destinationTypingIndex !== -1) targetChat.messages[destinationTypingIndex] = destinationMessage; else targetChat.messages.push(destinationMessage);
         targetChat.focused = true;
         chatState.forEach(item => { if (item.id !== targetChat.id) item.focused = false; });
+        saveChatToStorage(chat);
         saveChatToStorage(targetChat);
         renderChats();
         return true;
