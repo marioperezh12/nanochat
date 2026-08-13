@@ -1663,6 +1663,13 @@
       border-color: rgba(65, 214, 199, 0.32);
     }
 
+    .message.rule-message {
+      margin-left: auto;
+      background: rgba(148, 163, 184, 0.16);
+      border-color: rgba(148, 163, 184, 0.32);
+      color: rgba(226, 232, 240, 0.92);
+    }
+
     .hint-message {
       color: var(--muted);
       font-style: italic;
@@ -4462,6 +4469,10 @@
       }
     }
 
+    function isRuleMessage(message) {
+      return Boolean(message && message.isRule);
+    }
+
     function getMentionStateFromInput(value, caretIndex) {
       const text = String(value || '');
       const caret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : text.length, text.length));
@@ -5454,6 +5465,7 @@
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
       const consoleMenuHtml = ''
         + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
@@ -6944,6 +6956,8 @@
         renderChats();
       } else if (command === 'contexto') {
         handleContextoCommand(chat);
+      } else if (command === 'rule') {
+        handleRuleCommand(chat);
       } else if (command === 'anclar-archivo') {
         handleAnclarArchivoCommand(chat);
       }
@@ -6966,6 +6980,21 @@
 
     function handleAnclarArchivoCommand(chat) {
       chat.draftText = '/anclar-archivo ';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    function handleRuleCommand(chat) {
+      chat.draftText = '>> ';
       renderChats();
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
@@ -7484,7 +7513,7 @@
               const summaryActions = '<div class="message-actions">' + summaryReplicateBtn + summaryDeleteBtn + '</div>';
               return '<div class="message summary-message' + (isExpired ? ' expired' : '') + '" data-msg-index="' + i + '">' + body + summaryActions + '</div>';
             }
-            const cls = message.role === 'user' ? 'user' : 'assistant';
+            const cls = message.isRule ? 'rule-message' : (message.role === 'user' ? 'user' : 'assistant');
             const isPinned = activePinnedIndices.includes(i);
             const plain = (message.rawText || message.content || '').trim();
             const isLast = i === lastMsgIndex;
@@ -7575,6 +7604,7 @@
 
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
           + '<button type="button" class="console-item" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
@@ -8994,8 +9024,21 @@
       }
 
       if (text.startsWith('>>')) {
+        const ruleMessage = {
+          role: 'user',
+          content: text,
+          display: formatMarkdown(text),
+          rawText: text,
+          isRule: true
+        };
+        if (chat.temporalMode) ruleMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+        chat.messages.push(ruleMessage);
+        chat.focused = true;
+        chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
         input.value = '';
         chat.draftText = '';
+        saveChatToStorage(chat);
+        renderChats();
         const handled = await executeRuleMessage(chat, text);
         if (handled) return;
       }
@@ -9121,7 +9164,7 @@
 
       try {
         const engineMessages = chat.messages
-          .filter(message => !message.typing && !isTemporalMessageExpired(message))
+          .filter(message => !message.typing && !message.isRule && !isTemporalMessageExpired(message))
           .map(message => ({ role: message.role, content: message.content }));
         if (chat.pinnedFileContext && chat.pinnedFileContext.path) {
           const pinnedFileContext = await resolveFileByMention(chat, chat.pinnedFileContext.path) || chat.pinnedFileContext;
