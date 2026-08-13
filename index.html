@@ -3800,6 +3800,15 @@
     async function saveChatToStorage(chat) {
       try {
         const chatStorageId = chat.storageId || chat.name || '';
+        const powerShellLines = Array.isArray(chat._powerShellLines)
+          ? chat._powerShellLines
+              .filter(line => line && typeof line.text === 'string')
+              .map(line => ({
+                kind: line.kind === 'command' ? 'command' : 'output',
+                prefix: line.prefix === 'PS> ' ? 'PS> ' : '',
+                text: String(line.text || '')
+              }))
+          : [];
         const folderSelection = chat.folderSelection ? {
           name: chat.folderSelection.name || '',
           fileCount: Number(chat.folderSelection.fileCount) || 0,
@@ -3824,6 +3833,7 @@
               folderPanelOpen: Boolean(chat.folderPanelOpen),
               folderPreviewPath: chat.folderPreviewPath || null,
               pinnedFileContext: chat.pinnedFileContext || null,
+              powerShellLines,
               storageId: chatStorageId,
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
@@ -3851,6 +3861,7 @@
             folderPanelOpen: Boolean(chat.folderPanelOpen),
             folderPreviewPath: chat.folderPreviewPath || null,
             pinnedFileContext: chat.pinnedFileContext || null,
+            powerShellLines,
             storageId: chatStorageId,
             positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
             docked: Boolean(chat.docked),
@@ -3874,6 +3885,7 @@
           folderPanelOpen: Boolean(chat.folderPanelOpen),
           folderPreviewPath: chat.folderPreviewPath || null,
           pinnedFileContext: chat.pinnedFileContext || null,
+          powerShellLines,
           storageId: chatStorageId,
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
@@ -4196,7 +4208,7 @@
     }
 
     function isPreviewableFolderFileName(name) {
-      return /\.(txt|sql|json)$/i.test(String(name || ''));
+      return /\.(txt|sql|json|ps1)$/i.test(String(name || ''));
     }
 
     function findFolderTreeFileNode(node, path) {
@@ -4245,7 +4257,7 @@
       } else if (previewPath) {
         bodyHtml = '<div class="folder-preview-empty">Ese tipo de archivo no tiene vista previa.</div>';
       } else {
-        bodyHtml = '<div class="folder-preview-empty">Selecciona un archivo .txt, .sql o .json para ver su contenido.</div>';
+        bodyHtml = '<div class="folder-preview-empty">Selecciona un archivo .txt, .sql, .json o .ps1 para ver su contenido.</div>';
       }
 
       return '<div class="folder-preview-body">' + bodyHtml + '</div>';
@@ -8815,7 +8827,8 @@
         hasBranches: false,
         folderSelection: null,
         folderPanelOpen: false,
-        folderPreviewPath: null
+        folderPreviewPath: null,
+        _powerShellLines: []
       }));
       syncChatPositions();
       chatState.forEach(saveChatToStorage);
@@ -8870,6 +8883,15 @@
         folderPanelOpen: Boolean(item.folderPanelOpen),
         folderPreviewPath: typeof item.folderPreviewPath === 'string' ? item.folderPreviewPath : null,
         pinnedFileContext: item.pinnedFileContext || null,
+        _powerShellLines: Array.isArray(item.powerShellLines)
+          ? item.powerShellLines
+              .filter(line => line && typeof line.text === 'string')
+              .map(line => ({
+                kind: line.kind === 'command' ? 'command' : 'output',
+                prefix: line.prefix === 'PS> ' ? 'PS> ' : '',
+                text: String(line.text || '')
+              }))
+          : [],
         storageId: typeof item.storageId === 'string' && item.storageId ? item.storageId : createPersistentChatId(),
         positionIndex: Number.isFinite(item.positionIndex) ? item.positionIndex : i,
         statusMessage: null,
@@ -9144,6 +9166,18 @@
       try { panel.querySelector('.powershell-terminal')?.scrollIntoView({ block: 'end' }); } catch (error) { }
     }
 
+    function resetPowerShellPrompt(input, chat) {
+      if (!input) return;
+      input.value = '>>> ';
+      if (chat) {
+        chat.draftText = '>>> ';
+      }
+      try {
+        input.setSelectionRange(input.value.length, input.value.length);
+      } catch (error) { }
+      input.classList.toggle('console-mode', true);
+    }
+
     async function sendMessage(chatId, panel) {
       const chat = chatState.find(item => item.id === chatId);
       if (!chat) return;
@@ -9180,8 +9214,7 @@
         chat.messages.push(psMessage);
         chat.focused = true;
         chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
-        input.value = '';
-        chat.draftText = '';
+        resetPowerShellPrompt(input, chat);
         saveChatToStorage(chat);
         renderChats();
 
@@ -9211,6 +9244,7 @@
             };
             if (chat.temporalMode) cancelledMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
             if (typingIndex !== -1) chat.messages[typingIndex] = cancelledMessage; else chat.messages.push(cancelledMessage);
+            resetPowerShellPrompt(input, chat);
             saveChatToStorage(chat);
             renderChats();
             return;
@@ -9228,6 +9262,7 @@
           };
           if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
           if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+          resetPowerShellPrompt(input, chat);
           saveChatToStorage(chat);
           renderChats();
           return;
@@ -9237,6 +9272,7 @@
           const typingIndex = chat.messages.indexOf(typingMessage);
           const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText), rawText: errorText, isPowerShellResult: true };
           if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
+          resetPowerShellPrompt(input, chat);
           saveChatToStorage(chat);
           renderChats();
           return;
