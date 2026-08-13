@@ -2496,6 +2496,30 @@
       color: var(--text);
     }
 
+    .code-console {
+      position: absolute;
+      top: 5px;
+      right: 34px;
+      border: 1px solid var(--border);
+      background: rgba(7, 18, 22, 0.9);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 0.72rem;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    .code-block-wrap.has-console:hover .code-console {
+      opacity: 1;
+    }
+
+    .code-console:hover {
+      color: var(--text);
+    }
+
     .message ul,
     .message ol {
       margin: 4px 0;
@@ -8277,6 +8301,7 @@
           const editBtn = event.target.closest('.msg-edit');
           const copyBtn = event.target.closest('.msg-copy');
           const codeCopyBtn = event.target.closest('.code-copy');
+          const codeConsoleBtn = event.target.closest('.code-console');
           const pinBtn = event.target.closest('.msg-pin');
           const replicateBtn = event.target.closest('.msg-replicate');
           const replyBtn = event.target.closest('.msg-reply');
@@ -8445,6 +8470,36 @@
             const code = codeCopyBtn.getAttribute('data-code') || '';
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(code).catch(() => { });
+            }
+            return;
+          }
+          if (codeConsoleBtn) {
+            event.stopPropagation();
+            const code = codeConsoleBtn.getAttribute('data-code') || '';
+            const lang = (codeConsoleBtn.getAttribute('data-lang') || '').toLowerCase();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(code).catch(() => { });
+            }
+            if (lang === 'ps' || lang === 'powershell' || lang === 'pwsh' || lang === 'sql') {
+              const input = panel.querySelector('.chat-message-input');
+              if (input) {
+                const execType = lang === 'ps' ? 'powershell' : lang;
+                input.value = '>>> exec:' + execType;
+                chat.draftText = input.value;
+                chat._pendingExec = {
+                  type: execType,
+                  script: code
+                };
+                saveChatToStorage(chat);
+                renderChats();
+                requestAnimationFrame(() => {
+                  const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+                  if (freshInput) {
+                    freshInput.focus();
+                    freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+                  }
+                });
+              }
             }
             return;
           }
@@ -9110,16 +9165,16 @@
       return data.choices?.[0]?.message?.content || 'Respuesta recibida.';
     }
 
-    async function callPowerShell(command) {
+    async function callExecutor(type, payload) {
       const response = await fetch('http://localhost:3210/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command })
+        body: JSON.stringify({ type, ...payload })
       });
       const raw = await response.text();
       const data = raw ? JSON.parse(raw) : {};
       if (!response.ok) {
-        throw new Error(data.error || data.message || 'No se pudo ejecutar PowerShell.');
+        throw new Error(data.error || data.message || ('No se pudo ejecutar ' + type + '.'));
       }
       return data;
     }
@@ -9210,6 +9265,102 @@
         return;
       }
 
+      const execMatch = text.match(/^>>>\s*exec:([a-z0-9_-]+)\s*\n?([\s\S]*)$/i);
+      if (execMatch) {
+        const type = String(execMatch[1] || '').toLowerCase();
+        const payloadText = String(execMatch[2] || '').trim() || String(chat._pendingExec && chat._pendingExec.type === type ? chat._pendingExec.script : '').trim();
+        const execMessage = {
+          role: 'user',
+          content: text,
+          display: formatMarkdown(text),
+          rawText: text,
+          isRule: true,
+          isExecutor: true,
+          executorType: type
+        };
+        if (type === 'powershell') execMessage.isPowerShell = true;
+        if (chat.temporalMode) execMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+        chat.messages.push(execMessage);
+        chat.focused = true;
+        chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+        input.value = '';
+        chat.draftText = '';
+        chat._pendingExec = null;
+        saveChatToStorage(chat);
+        renderChats();
+
+        if (!payloadText) {
+          setTemporaryChatStatus(chat, 'Escribe un comando o script despues de >>> exec:' + type + '.', 4200);
+          return;
+        }
+
+        appendPowerShellLine(chat, panel, payloadText, 'command');
+
+        const typingMessage = { role: 'assistant', typing: true };
+        chat.messages.push(typingMessage);
+        renderChats();
+
+        try {
+          const result = await callExecutor(type, type === 'sql'
+            ? { script: payloadText }
+            : { command: payloadText });
+
+          if (result.cancelled) {
+            const cancelledText = result.message || (type === 'sql' ? 'Ejecucion SQL cancelada.' : 'Ejecucion cancelada.');
+            appendPowerShellLine(chat, panel, cancelledText, 'output');
+            const typingIndex = chat.messages.indexOf(typingMessage);
+            const cancelledMessage = {
+              role: 'assistant',
+              content: cancelledText,
+              display: formatMarkdown(cancelledText),
+              rawText: cancelledText,
+              isExecutorResult: true,
+              executorType: type
+            };
+            if (type === 'powershell') cancelledMessage.isPowerShellResult = true;
+            if (chat.temporalMode) cancelledMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+            if (typingIndex !== -1) chat.messages[typingIndex] = cancelledMessage; else chat.messages.push(cancelledMessage);
+            saveChatToStorage(chat);
+            renderChats();
+            return;
+          }
+
+          const finalText = result.output || result.stdout || result.stderr || result.message || 'Comando ejecutado sin salida.';
+          appendPowerShellLine(chat, panel, finalText, 'output');
+          const typingIndex = chat.messages.indexOf(typingMessage);
+          const replyMessage = {
+            role: 'assistant',
+            content: finalText,
+            display: formatMarkdown(finalText),
+            rawText: finalText,
+            isExecutorResult: true,
+            executorType: type
+          };
+          if (type === 'powershell') replyMessage.isPowerShellResult = true;
+          if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+          saveChatToStorage(chat);
+          renderChats();
+        } catch (error) {
+          const errorText = error && error.message ? error.message : ('No se pudo ejecutar ' + type + '.');
+          appendPowerShellLine(chat, panel, errorText, 'output');
+          const typingIndex = chat.messages.indexOf(typingMessage);
+          const errorMessage = {
+            role: 'assistant',
+            content: errorText,
+            display: escapeHtml(errorText),
+            rawText: errorText,
+            isExecutorResult: true,
+            executorType: type
+          };
+          if (type === 'powershell') errorMessage.isPowerShellResult = true;
+          if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
+          saveChatToStorage(chat);
+          renderChats();
+        }
+        return;
+      }
+
       if (text.startsWith('>>>')) {
         const psMessage = {
           role: 'user',
@@ -9224,6 +9375,7 @@
         chat.focused = true;
         chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
         resetPowerShellPrompt(input, chat);
+        chat._pendingExec = null;
         saveChatToStorage(chat);
         renderChats();
 
@@ -9239,7 +9391,7 @@
         chat.messages.push(typingMessage);
         renderChats();
         try {
-          const result = await callPowerShell(command);
+          const result = await callExecutor('powershell', { command });
           if (result.cancelled) {
             const cancelledText = result.message || 'Ejecución cancelada.';
             appendPowerShellLine(chat, panel, cancelledText, 'output');
@@ -9488,7 +9640,10 @@
       const codeBlocks = [];
       const tableBlocks = [];
       const withPlaceholders = text.replace(/```([a-zA-Z0-9]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
-        codeBlocks.push(code.replace(/\n$/, ''));
+        codeBlocks.push({
+          lang: String(lang || '').trim().toLowerCase(),
+          raw: code.replace(/\n$/, '')
+        });
         return ' CODEBLOCK' + (codeBlocks.length - 1) + ' ';
       });
 
@@ -9590,8 +9745,16 @@
       out = chunks.join('<br>');
       out = out.replace(/ TABLEBLOCK(\d+) /g, (match, idx) => tableBlocks[Number(idx)] || '');
       out = out.replace(/ CODEBLOCK(\d+) /g, (match, idx) => {
-        const raw = codeBlocks[Number(idx)];
-        return '<div class="code-block-wrap"><button type="button" class="code-copy" data-code="' + escapeHtml(raw) + '" title="Copiar comando">&#128203;</button><pre class="code-block"><code>' + escapeHtml(raw) + '</code></pre></div>';
+        const block = codeBlocks[Number(idx)] || { lang: '', raw: '' };
+        const raw = block.raw || '';
+        const lang = block.lang || '';
+        const isConsoleLang = lang === 'sql' || lang === 'ps' || lang === 'powershell' || lang === 'pwsh' || lang === 'shell' || lang === 'bash' || lang === 'zsh';
+        const consoleBtn = isConsoleLang
+          ? '<button type="button" class="code-console" data-code="' + escapeHtml(raw) + '" data-lang="' + escapeHtml(lang) + '" title="Enviar a consola">&gt;_</button>'
+          : '';
+        return '<div class="code-block-wrap' + (isConsoleLang ? ' has-console' : '') + '">'
+          + consoleBtn
+          + '<button type="button" class="code-copy" data-code="' + escapeHtml(raw) + '" title="Copiar comando">&#128203;</button><pre class="code-block"><code>' + escapeHtml(raw) + '</code></pre></div>';
       });
       return out;
     }
