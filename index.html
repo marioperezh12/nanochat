@@ -3574,6 +3574,7 @@
               folderSelection: chat.folderSelection || null,
               folderPanelOpen: Boolean(chat.folderPanelOpen),
               folderPreviewPath: chat.folderPreviewPath || null,
+              pinnedFileContext: chat.pinnedFileContext || null,
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
@@ -3595,15 +3596,16 @@
             revealedOlderCount: Number(chat.revealedOlderCount) || 0,
             versions: Array.isArray(chat.versions) ? chat.versions : [],
             currentSourceLabel: chat.currentSourceLabel || null,
-              contextMessage: chat.contextMessage || null,
-              folderSelection: chat.folderSelection || null,
-              folderPanelOpen: Boolean(chat.folderPanelOpen),
-              folderPreviewPath: chat.folderPreviewPath || null,
-              positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
-              docked: Boolean(chat.docked),
-              temporalMode: Boolean(chat.temporalMode),
-              hasBranches: Boolean(chat.hasBranches),
-              isPrivate: true
+            contextMessage: chat.contextMessage || null,
+            folderSelection: chat.folderSelection || null,
+            folderPanelOpen: Boolean(chat.folderPanelOpen),
+            folderPreviewPath: chat.folderPreviewPath || null,
+            pinnedFileContext: chat.pinnedFileContext || null,
+            positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
+            docked: Boolean(chat.docked),
+            temporalMode: Boolean(chat.temporalMode),
+            hasBranches: Boolean(chat.hasBranches),
+            isPrivate: true
             }));
           return;
         }
@@ -3620,6 +3622,7 @@
           folderSelection: chat.folderSelection || null,
           folderPanelOpen: Boolean(chat.folderPanelOpen),
           folderPreviewPath: chat.folderPreviewPath || null,
+          pinnedFileContext: chat.pinnedFileContext || null,
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
           temporalMode: Boolean(chat.temporalMode),
@@ -3878,6 +3881,7 @@
         consoleShowDelete: false,
         temporalMode: false,
         hasBranches: false,
+        pinnedFileContext: null,
         folderSelection: null,
         folderPanelOpen: false,
         folderPreviewPath: null
@@ -4107,6 +4111,31 @@
         });
       }
       return { text: source, files };
+    }
+
+    async function resolveFileByMention(chat, mentionText) {
+      const file = findChatFolderFileEntry(chat, mentionText);
+      if (!file) return null;
+      const filePath = file.path || file.name || mentionText;
+      let fileText = '';
+      const previewNode = await loadFolderFilePreview(chat, filePath);
+      if (previewNode && typeof previewNode.content === 'string') {
+        fileText = previewNode.content;
+      } else {
+        const fileRef = getLiveFolderFileReference(chat, filePath);
+        if (fileRef) {
+          try {
+            fileText = await readLiveFolderFileText(fileRef);
+          } catch (error) {
+            fileText = '';
+          }
+        }
+      }
+      return {
+        path: filePath,
+        name: file.name || filePath,
+        content: fileText
+      };
     }
 
     function getMentionStateFromInput(value, caretIndex) {
@@ -5067,6 +5096,7 @@
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
       const consoleMenuHtml = ''
         + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -6556,6 +6586,8 @@
         renderChats();
       } else if (command === 'contexto') {
         handleContextoCommand(chat);
+      } else if (command === 'anclar-archivo') {
+        handleAnclarArchivoCommand(chat);
       }
     }
 
@@ -6565,6 +6597,21 @@
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
         if (!freshInput) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    function handleAnclarArchivoCommand(chat) {
+      chat.draftText = '/anclar-archivo ';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
         freshInput.focus();
         freshInput.value = chat.draftText;
         freshInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -6711,7 +6758,8 @@
         consoleShowVersions: false,
         consoleShowDelete: false,
         temporalMode: false,
-        hasBranches: false
+        hasBranches: false,
+        pinnedFileContext: parsed.pinnedFileContext || null
       };
       chatState.forEach(item => { item.focused = false; item.flashHighlight = false; });
       chatState.unshift(chat);
@@ -7169,6 +7217,7 @@
 
         const consoleMenuHtml = ''
         + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
           + '<button type="button" class="console-item" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -7216,6 +7265,9 @@
           : '';
         const statusBannerHtml = chat.statusMessage
           ? '<div class="status-banner">' + escapeHtml(chat.statusMessage) + '</div>'
+          : '';
+        const pinnedFileBannerHtml = chat.pinnedFileContext
+          ? '<div class="status-banner pinned-file-banner"><div class="pinned-file-banner-content"><strong>&#128206; Archivo anclado:</strong><span>' + escapeHtml(chat.pinnedFileContext.path || chat.pinnedFileContext.name || 'archivo') + '</span></div><button type="button" class="pinned-file-close-btn" title="Cerrar">&#215;</button></div>'
           : '';
 
         panel.innerHTML = `
@@ -7280,6 +7332,7 @@
           <button type="button" class="scroll-to-bottom-btn" hidden title="Ir al final">&#8595; Ir abajo</button>
           ${branchesBannerHtml}
           ${statusBannerHtml}
+          ${pinnedFileBannerHtml}
           ${versionBannerHtml}
           ${(chat.viewingVersionId || isPickerMode) ? '' : replyBannerHtml}
           <div class="panel-input${hasBranches ? ' branch-locked' : ''}"${(chat.viewingVersionId || isPickerMode) ? ' hidden' : ''}>
@@ -7397,6 +7450,15 @@
             event.stopPropagation();
             if (!chat.folderSelection) return;
             chat.folderPanelOpen = false;
+            saveChatToStorage(chat);
+            renderChats();
+          });
+        }
+        const pinnedFileCloseBtn = panel.querySelector('.pinned-file-close-btn');
+        if (pinnedFileCloseBtn) {
+          pinnedFileCloseBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            chat.pinnedFileContext = null;
             saveChatToStorage(chat);
             renderChats();
           });
@@ -8344,6 +8406,7 @@
         folderSelection: item.folderSelection || null,
         folderPanelOpen: Boolean(item.folderPanelOpen),
         folderPreviewPath: typeof item.folderPreviewPath === 'string' ? item.folderPreviewPath : null,
+        pinnedFileContext: item.pinnedFileContext || null,
         positionIndex: Number.isFinite(item.positionIndex) ? item.positionIndex : i,
         statusMessage: null,
         consoleShowVersions: false,
@@ -8608,6 +8671,30 @@
         return;
       }
 
+      const pinFileMatch = text.match(/^\/anclar-archivo(?:\s+([\s\S]*))?$/i);
+      if (pinFileMatch) {
+        const mentionText = (pinFileMatch[1] || '').trim();
+        if (!mentionText) {
+          setTemporaryChatStatus(chat, 'Debes mencionar un archivo para anclarlo.', 4200);
+          input.value = '';
+          chat.draftText = '';
+          return;
+        }
+        const pinnedFile = await resolveFileByMention(chat, mentionText);
+        if (!pinnedFile) {
+          setTemporaryChatStatus(chat, 'No encontrÃ© ese archivo para anclarlo.', 4200);
+          input.value = '';
+          chat.draftText = '';
+          return;
+        }
+        chat.pinnedFileContext = pinnedFile;
+        input.value = '';
+        chat.draftText = '';
+        saveChatToStorage(chat);
+        renderChats();
+        return;
+      }
+
       if (chat.editingIndex != null) {
         chat.messages = chat.messages.slice(0, chat.editingIndex);
         chat.editingIndex = null;
@@ -8623,9 +8710,9 @@
       const hasRealMessages = chat.messages.some(message => !message.typing);
       if (!hasRealMessages) {
         if (chat.responseMode === 'short') {
-          userContent += '\n\n[responde: directo, no inventes/asumas/infieras]';
+          userContent += '\n\n[responde: directo, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
         } else if (chat.responseMode === 'complex') {
-          userContent += '\n\n[responde: con detalle, no inventes/asumas/infieras/no rodeos]';
+          userContent += '\n\n[responde: con detalle, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
         }
       }
       if (chat.replyingToIndex != null && chat.messages[chat.replyingToIndex]) {
@@ -8665,6 +8752,13 @@
         const engineMessages = chat.messages
           .filter(message => !message.typing && !isTemporalMessageExpired(message))
           .map(message => ({ role: message.role, content: message.content }));
+        if (chat.pinnedFileContext && chat.pinnedFileContext.path) {
+          const pinnedFileContext = await resolveFileByMention(chat, chat.pinnedFileContext.path) || chat.pinnedFileContext;
+          engineMessages.unshift({
+            role: 'user',
+            content: '[Archivo anclado: ' + pinnedFileContext.path + ']\n' + (pinnedFileContext.content || '[Contenido no disponible]')
+          });
+        }
         if (Array.isArray(resolvedMentions.files) && resolvedMentions.files.length) {
           resolvedMentions.files.slice().reverse().forEach(file => {
             engineMessages.unshift({
@@ -9183,3 +9277,4 @@
 </body>
 
 </html>
+
