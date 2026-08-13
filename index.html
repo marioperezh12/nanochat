@@ -2227,6 +2227,56 @@
       text-align: center;
     }
 
+    .pinned-file-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      text-align: left;
+    }
+
+    .pinned-file-banner-content {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      text-align: left;
+    }
+
+    .pinned-file-banner-content strong,
+    .pinned-file-banner-content span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pinned-file-close-btn {
+      flex: none;
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-size: 0.95rem;
+      line-height: 1;
+      cursor: pointer;
+      transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+
+    .pinned-file-close-btn:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.24);
+      transform: translateY(-1px);
+    }
+
+    .pinned-file-close-btn:focus-visible {
+      outline: 2px solid rgba(91, 255, 106, 0.55);
+      outline-offset: 2px;
+    }
     .status-banner.branches-banner {
       background: rgba(65, 214, 199, 0.1);
       border: 1px solid rgba(65, 214, 199, 0.34);
@@ -3487,6 +3537,13 @@
       return STORAGE_PREFIX + name;
     }
 
+    function createPersistentChatId() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return 'chat-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    }
+
     function getChatByName(name) {
       if (!name) return null;
       return chatState.find(chat => chat.name === name) || null;
@@ -3655,6 +3712,12 @@
 
     async function saveChatToStorage(chat) {
       try {
+        const chatStorageId = chat.storageId || chat.name || '';
+        const folderSelection = chat.folderSelection ? {
+          name: chat.folderSelection.name || '',
+          fileCount: Number(chat.folderSelection.fileCount) || 0,
+          selectedAt: Number(chat.folderSelection.selectedAt) || Date.now()
+        } : null;
         if (chat.isPrivate) {
           if (chat._encryptedMessages && !chat.unlocked) {
             // Still locked and never decrypted this session: re-write the existing
@@ -3670,10 +3733,11 @@
               versions: Array.isArray(chat.versions) ? chat.versions : [],
               currentSourceLabel: chat.currentSourceLabel || null,
               contextMessage: chat.contextMessage || null,
-              folderSelection: chat.folderSelection || null,
+              folderSelection,
               folderPanelOpen: Boolean(chat.folderPanelOpen),
               folderPreviewPath: chat.folderPreviewPath || null,
               pinnedFileContext: chat.pinnedFileContext || null,
+              storageId: chatStorageId,
               positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
               docked: Boolean(chat.docked),
               temporalMode: Boolean(chat.temporalMode),
@@ -3696,10 +3760,11 @@
             versions: Array.isArray(chat.versions) ? chat.versions : [],
             currentSourceLabel: chat.currentSourceLabel || null,
             contextMessage: chat.contextMessage || null,
-            folderSelection: chat.folderSelection || null,
+            folderSelection,
             folderPanelOpen: Boolean(chat.folderPanelOpen),
             folderPreviewPath: chat.folderPreviewPath || null,
             pinnedFileContext: chat.pinnedFileContext || null,
+            storageId: chatStorageId,
             positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
             docked: Boolean(chat.docked),
             temporalMode: Boolean(chat.temporalMode),
@@ -3718,10 +3783,11 @@
           versions: Array.isArray(chat.versions) ? chat.versions : [],
           currentSourceLabel: chat.currentSourceLabel || null,
           contextMessage: chat.contextMessage || null,
-          folderSelection: chat.folderSelection || null,
+          folderSelection,
           folderPanelOpen: Boolean(chat.folderPanelOpen),
           folderPreviewPath: chat.folderPreviewPath || null,
           pinnedFileContext: chat.pinnedFileContext || null,
+          storageId: chatStorageId,
           positionIndex: Number.isFinite(chat.positionIndex) ? chat.positionIndex : null,
           docked: Boolean(chat.docked),
           temporalMode: Boolean(chat.temporalMode),
@@ -3980,6 +4046,7 @@
         consoleShowDelete: false,
         temporalMode: false,
         hasBranches: false,
+        storageId: createPersistentChatId(),
         pinnedFileContext: null,
         folderSelection: null,
         folderPanelOpen: false,
@@ -4009,6 +4076,9 @@
       chat.folderPanelOpen = true;
       chat.folderPreviewPath = null;
       await saveChatToStorage(chat);
+      if (typeof folderBrowser.rememberDirectorySelection === 'function') {
+        await folderBrowser.rememberDirectorySelection(storageKey(chat.storageId || chat.name), selection);
+      }
       renderChats();
     }
 
@@ -8459,7 +8529,7 @@
       renderChats();
     }
 
-    function initChats() {
+    async function initChats() {
       const saved = loadChatsFromStorage();
       if (!saved.length) {
         createChats();
@@ -8502,10 +8572,11 @@
         viewingVersionId: null,
         currentSourceLabel: typeof item.currentSourceLabel === 'string' ? item.currentSourceLabel : null,
         contextMessage: item.contextMessage || null,
-        folderSelection: item.folderSelection || null,
+        folderSelection: null,
         folderPanelOpen: Boolean(item.folderPanelOpen),
         folderPreviewPath: typeof item.folderPreviewPath === 'string' ? item.folderPreviewPath : null,
         pinnedFileContext: item.pinnedFileContext || null,
+        storageId: typeof item.storageId === 'string' && item.storageId ? item.storageId : createPersistentChatId(),
         positionIndex: Number.isFinite(item.positionIndex) ? item.positionIndex : i,
         statusMessage: null,
         consoleShowVersions: false,
@@ -8513,6 +8584,15 @@
         temporalMode: Boolean(item.temporalMode),
         hasBranches: Boolean(item.hasBranches)
       }));
+      const folderBrowser = window.nanochatFolderBrowser;
+      if (folderBrowser && typeof folderBrowser.restoreDirectorySelection === 'function') {
+        await Promise.all(chatState.map(async (chat) => {
+          const restored = await folderBrowser.restoreDirectorySelection(storageKey(chat.storageId || chat.name));
+          if (!restored) return;
+          chat.folderSelection = restored;
+          chat.folderPanelOpen = true;
+        }));
+      }
       dockedSaved.forEach(item => {
         const chat = chatState.find(entry => entry.name === item.name);
         if (chat) chat.docked = true;
@@ -8809,9 +8889,9 @@
       const hasRealMessages = chat.messages.some(message => !message.typing);
       if (!hasRealMessages) {
         if (chat.responseMode === 'short') {
-          userContent += '\n\n[responde: directo, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
+          userContent += '\n\n[responde: directo, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sÃ©" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
         } else if (chat.responseMode === 'complex') {
-          userContent += '\n\n[responde: con detalle, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sé" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
+          userContent += '\n\n[responde: con detalle, no inventes/asumas/infieras. Si no tienes el dato exacto, di "no lo sÃ©" o "no tengo acceso". Prohibido usar conocimiento previo o suposiciones.]';
         }
       }
       if (chat.replyingToIndex != null && chat.messages[chat.replyingToIndex]) {
@@ -9341,7 +9421,7 @@
       initWorkspaceThreeMiniChats();
       initWorkspaceThree();
       initWorkspaceThreeConnections();
-      initChats();
+      await initChats();
       restoreWorkspaceThreeFromStorage();
     }
 
@@ -9377,4 +9457,6 @@
 </body>
 
 </html>
+
+
 

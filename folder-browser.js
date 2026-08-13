@@ -1,6 +1,7 @@
 (function () {
-  const moduleUrl = 'https://unpkg.com/browser-fs-access?module';
-  let modulePromise = null;
+  const DB_NAME = 'nanochat-folder-handles';
+  const DB_VERSION = 1;
+  const STORE_NAME = 'directory-handles';
 
   function escapeHtml(value) {
     return String(value == null ? '' : value)
@@ -26,37 +27,18 @@
       : value.toFixed(1) + ' ' + units[unitIndex];
   }
 
-  function getRelativePath(file) {
-    return String(file?.webkitRelativePath || file?.relativePath || file?.name || '').replace(/^\/+/, '');
-  }
-
-  function sortFolderChildren(node) {
-    if (!node || !Array.isArray(node.children)) return node;
-    node.children.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-      return String(a.name || '').localeCompare(String(b.name || ''), 'es', { sensitivity: 'base' });
-    });
-    node.children.forEach(child => sortFolderChildren(child));
-    return node;
-  }
-
   function createFolderNode(name, path) {
-    return {
-      type: 'folder',
-      name: name || '',
-      path: path || '',
-      children: []
-    };
+    return { type: 'folder', name: name || '', path: path || '', children: [] };
   }
 
-  function createFileNode(file, path) {
+  function createFileNode(name, path, file) {
     const node = {
       type: 'file',
-      name: file?.name || path.split('/').pop() || 'archivo',
+      name: name || path.split('/').pop() || 'archivo',
       path,
       size: Number(file?.size) || 0,
       mimeType: String(file?.type || ''),
-      previewable: Boolean(file?.previewable || isPreviewableFile(file))
+      previewable: Boolean(/\.(txt|sql|json)$/i.test(String(name || '')))
     };
     if (file) {
       Object.defineProperty(node, 'fileRef', {
@@ -68,78 +50,81 @@
     return node;
   }
 
-  function isPreviewableFile(file) {
-    const name = String(file?.name || '').toLowerCase();
-    return /\.(txt|sql|json)$/i.test(name);
-  }
-
-  async function readFileText(file) {
-    if (!file) return '';
-    if (typeof file.text === 'function') {
-      try {
-        return await file.text();
-      } catch (error) { }
-    }
+  async function openDb() {
     return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsText(file);
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
     });
   }
 
-  async function buildTree(files) {
-    const list = Array.isArray(files) ? files.filter(Boolean) : [];
-    const firstPath = getRelativePath(list[0]);
-    const rootName = firstPath.split('/').filter(Boolean)[0] || 'Carpeta seleccionada';
-    const root = createFolderNode(rootName, rootName);
+  async function setStoredHandle(key, handle) {
+    if (!key || !handle) return;
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(handle, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }
+
+  async function getStoredHandle(key) {
+    if (!key) return null;
+    try {
+      const db = await openDb();
+      const value = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+      db.close();
+      return value;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function readDirectoryHandle(handle, rootName, rootPath) {
+    const root = createFolderNode(rootName || handle?.name || 'Carpeta seleccionada', rootPath || handle?.name || '');
     const filesByPath = new Map();
 
-    for (const file of list) {
-      const rawPath = getRelativePath(file);
-      if (!rawPath) continue;
-      const segments = rawPath.split('/').filter(Boolean);
-      const relativeSegments = segments[0] === rootName ? segments.slice(1) : segments;
-      if (!relativeSegments.length) {
-        filesByPath.set(rawPath, file);
-        root.children.push(createFileNode(file, rawPath));
-        continue;
+    async function walk(directoryHandle, parentNode, parentPath) {
+      for await (const entry of directoryHandle.values()) {
+        const entryPath = parentPath ? parentPath + '/' + entry.name : entry.name;
+        if (entry.kind === 'directory') {
+          const folderNode = createFolderNode(entry.name, entryPath);
+          parentNode.children.push(folderNode);
+          await walk(entry, folderNode, entryPath);
+        } else if (entry.kind === 'file') {
+          const file = await entry.getFile();
+          filesByPath.set(entryPath, entry);
+          parentNode.children.push(createFileNode(entry.name, entryPath, file));
+        }
       }
-      let cursor = root;
-      let currentPath = rootName;
-
-      relativeSegments.forEach((segment, index) => {
-        const isLast = index === relativeSegments.length - 1;
-        currentPath += '/' + segment;
-        if (isLast) {
-          filesByPath.set(currentPath, file);
-          cursor.children.push(createFileNode(file, currentPath));
-          return;
-        }
-        let nextNode = cursor.children.find(child => child.type === 'folder' && child.name === segment);
-        if (!nextNode) {
-          nextNode = createFolderNode(segment, currentPath);
-          cursor.children.push(nextNode);
-        }
-        cursor = nextNode;
-      });
     }
 
+    await walk(handle, root, '');
     Object.defineProperty(root, 'filesByPath', {
       value: filesByPath,
       enumerable: false,
       configurable: true
     });
-
-    return sortFolderChildren(root);
+    return root;
   }
 
   function countFiles(node) {
     if (!node) return 0;
     if (node.type === 'file') return 1;
-    return Array.isArray(node.children)
-      ? node.children.reduce((sum, child) => sum + countFiles(child), 0)
-      : 0;
+    return Array.isArray(node.children) ? node.children.reduce((sum, child) => sum + countFiles(child), 0) : 0;
   }
 
   function flattenFiles(node, output = []) {
@@ -152,9 +137,7 @@
       });
       return output;
     }
-    if (Array.isArray(node.children)) {
-      node.children.forEach(child => flattenFiles(child, output));
-    }
+    if (Array.isArray(node.children)) node.children.forEach(child => flattenFiles(child, output));
     return output;
   }
 
@@ -163,8 +146,7 @@
     return '<ul class="folder-tree-list">'
       + children.map(child => {
         if (child.type === 'file') {
-          const isPreviewable = Boolean(child.previewable);
-          const labelHtml = isPreviewable
+          const labelHtml = child.previewable
             ? '<a href="#" class="folder-tree-file-link" data-file-path="' + escapeHtml(child.path) + '" data-file-previewable="1">' + escapeHtml(child.name) + '</a>'
             : '<span>' + escapeHtml(child.name) + '</span>';
           return '<li class="folder-tree-item folder-tree-file">'
@@ -184,9 +166,7 @@
   }
 
   function renderDirectoryTreeHtml(tree) {
-    if (!tree) {
-      return '<div class="folder-tree-empty">Selecciona una carpeta para ver su contenido.</div>';
-    }
+    if (!tree) return '<div class="folder-tree-empty">Selecciona una carpeta para ver su contenido.</div>';
     const filesCount = countFiles(tree);
     return '<div class="folder-tree">'
       + '<div class="folder-tree-root">'
@@ -199,29 +179,16 @@
       + '</div>';
   }
 
-  async function loadModule() {
-    if (!modulePromise) {
-      modulePromise = import(moduleUrl);
-    }
-    return modulePromise;
-  }
-
   async function selectDirectory(options = {}) {
     try {
-      const api = await loadModule();
-      if (!api || typeof api.directoryOpen !== 'function') return null;
-      const files = await api.directoryOpen({
-        recursive: true,
-        mode: 'read',
-        startIn: options.startIn || 'documents'
-      });
-      if (!Array.isArray(files) || !files.length) return null;
-      const tree = await buildTree(files);
-      const filesByPath = tree && tree.filesByPath instanceof Map ? tree.filesByPath : null;
+      if (typeof window.showDirectoryPicker !== 'function') return null;
+      const handle = await window.showDirectoryPicker({ mode: 'read', startIn: options.startIn || 'documents' });
+      if (!handle) return null;
+      const tree = await readDirectoryHandle(handle, handle.name, handle.name);
       return {
-        name: tree.name,
+        name: handle.name || tree.name,
+        handle,
         tree,
-        filesByPath,
         fileCount: countFiles(tree),
         selectedAt: Date.now()
       };
@@ -231,10 +198,40 @@
     }
   }
 
+  async function restoreDirectorySelection(key) {
+    const handle = await getStoredHandle(key);
+    if (!handle) return null;
+    try {
+      if (typeof handle.queryPermission === 'function') {
+        const permission = await handle.queryPermission({ mode: 'read' });
+        if (permission !== 'granted' && typeof handle.requestPermission === 'function') {
+          const requested = await handle.requestPermission({ mode: 'read' });
+          if (requested !== 'granted') return null;
+        }
+      }
+      const tree = await readDirectoryHandle(handle, handle.name, handle.name);
+      return {
+        name: handle.name || tree.name,
+        handle,
+        tree,
+        fileCount: countFiles(tree),
+        selectedAt: Date.now()
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function rememberDirectorySelection(key, selection) {
+    if (!key || !selection?.handle) return;
+    await setStoredHandle(key, selection.handle);
+  }
+
   window.nanochatFolderBrowser = {
     selectDirectory,
+    restoreDirectorySelection,
+    rememberDirectorySelection,
     renderDirectoryTreeHtml,
-    buildTree,
     flattenFiles
   };
 })();
