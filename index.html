@@ -2291,6 +2291,43 @@
       cursor: pointer;
     }
 
+    .markdown-table-wrap {
+      overflow-x: auto;
+      margin: 6px 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .markdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92em;
+    }
+
+    .markdown-table th,
+    .markdown-table td {
+      padding: 8px 10px;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .markdown-table th {
+      background: rgba(255, 255, 255, 0.05);
+      font-weight: 600;
+    }
+
+    .markdown-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .markdown-table th:last-child,
+    .markdown-table td:last-child {
+      border-right: 0;
+    }
+
     .message-actions button.msg-delete:hover {
       color: #ff6b6b;
     }
@@ -8986,12 +9023,48 @@
 
     function formatMarkdown(text) {
       const codeBlocks = [];
+      const tableBlocks = [];
       const withPlaceholders = text.replace(/```([a-zA-Z0-9]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
         codeBlocks.push(code.replace(/\n$/, ''));
         return ' CODEBLOCK' + (codeBlocks.length - 1) + ' ';
       });
 
-      let out = escapeHtml(withPlaceholders);
+      function parseTableCells(row) {
+        return String(row || '')
+          .trim()
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map(cell => cell.trim());
+      }
+
+      function isTableSeparator(row) {
+        const cells = parseTableCells(row);
+        return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+      }
+
+      function renderTableBlock(block) {
+        const rows = String(block || '')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean);
+        if (rows.length < 2 || !rows[0].includes('|') || !isTableSeparator(rows[1])) return escapeHtml(block);
+        const header = parseTableCells(rows[0]);
+        const bodyRows = rows.slice(2).map(parseTableCells).filter(row => row.length);
+        const thead = '<thead><tr>' + header.map(cell => '<th>' + escapeHtml(cell) + '</th>').join('') + '</tr></thead>';
+        const tbody = bodyRows.length
+          ? '<tbody>' + bodyRows.map(row => '<tr>' + row.map(cell => '<td>' + escapeHtml(cell) + '</td>').join('') + '</tr>').join('') + '</tbody>'
+          : '';
+        tableBlocks.push('<div class="markdown-table-wrap"><table class="markdown-table">' + thead + tbody + '</table></div>');
+        return ' TABLEBLOCK' + (tableBlocks.length - 1) + ' ';
+      }
+
+      const withTables = withPlaceholders.replace(
+        /(^|\n)(\|[^\n]*\|\n\|(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|\n(?:\|[^\n]*\|\n?)*)/g,
+        (match, prefix, block) => prefix + renderTableBlock(block.trim())
+      );
+
+      let out = escapeHtml(withTables);
 
       out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
       out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -9052,6 +9125,7 @@
 
       flushList();
       out = chunks.join('<br>');
+      out = out.replace(/ TABLEBLOCK(\d+) /g, (match, idx) => tableBlocks[Number(idx)] || '');
       out = out.replace(/ CODEBLOCK(\d+) /g, (match, idx) => {
         const raw = codeBlocks[Number(idx)];
         return '<div class="code-block-wrap"><button type="button" class="code-copy" data-code="' + escapeHtml(raw) + '" title="Copiar comando">&#128203;</button><pre class="code-block"><code>' + escapeHtml(raw) + '</code></pre></div>';
