@@ -4071,22 +4071,42 @@
       }));
     }
 
-    function resolveMentionedFiles(chat, text) {
+    async function resolveMentionedFiles(chat, text) {
       const source = String(text || '');
       if (!source) return { text: '', files: [] };
       const mentionRe = /@([^\s@]+)/g;
       const files = [];
       const seen = new Set();
-      const expandedText = source.replace(mentionRe, (match, mention) => {
+      for (let match; (match = mentionRe.exec(source));) {
+        const mention = match[1];
         const file = findChatFolderFileEntry(chat, mention);
-        if (!file) return match;
+        if (!file) continue;
         const key = (file.path || file.name || mention).toLowerCase();
-        if (seen.has(key)) return match;
+        if (seen.has(key)) continue;
         seen.add(key);
-        files.push(file);
-        return '\n\n[Archivo referenciado: ' + (file.path || file.name || mention) + ']\n' + (file.content || '');
-      });
-      return { text: expandedText, files };
+
+        const filePath = file.path || file.name || mention;
+        let fileText = '';
+        const previewNode = await loadFolderFilePreview(chat, filePath);
+        if (previewNode && typeof previewNode.content === 'string') {
+          fileText = previewNode.content;
+        } else {
+          const fileRef = getLiveFolderFileReference(chat, filePath);
+          if (fileRef) {
+            try {
+              fileText = await readLiveFolderFileText(fileRef);
+            } catch (error) {
+              fileText = '';
+            }
+          }
+        }
+        files.push({
+          path: filePath,
+          name: file.name || filePath,
+          content: fileText
+        });
+      }
+      return { text: source, files };
     }
 
     function getMentionStateFromInput(value, caretIndex) {
@@ -8593,17 +8613,20 @@
         chat.editingIndex = null;
       }
 
-      const resolvedMentions = resolveMentionedFiles(chat, text);
+      const resolvedMentions = await resolveMentionedFiles(chat, text);
       let userContent = resolvedMentions.text;
-      let displayContent = buildMentionedFileDisplayHtml(chat, text);
+      let displayContent = formatMarkdown(text);
       if (chat.attachment && chat.attachment.content) {
         userContent += '\n\n[Archivo adjunto: ' + chat.attachment.name + ']\n' + chat.attachment.content;
         displayContent += '<br><a class="attachment-tag" href="' + chat.attachment.url + '" download="' + escapeHtml(chat.attachment.name) + '" target="_blank" rel="noopener">&#128206; ' + escapeHtml(chat.attachment.name) + '</a>';
       }
-      if (chat.responseMode === 'short') {
-        userContent += '\n\n[Instrucción: responde de forma breve y concisa.]';
-      } else if (chat.responseMode === 'complex') {
-        userContent += '\n\n[Instrucción: responde de forma detallada y completa.]';
+      const hasRealMessages = chat.messages.some(message => !message.typing);
+      if (!hasRealMessages) {
+        if (chat.responseMode === 'short') {
+          userContent += '\n\n[responde: directo, no inventes/asumas/infieras]';
+        } else if (chat.responseMode === 'complex') {
+          userContent += '\n\n[responde: con detalle, no inventes/asumas/infieras/no rodeos]';
+        }
       }
       if (chat.replyingToIndex != null && chat.messages[chat.replyingToIndex]) {
         const originIdx = chat.replyingToIndex;
@@ -8642,6 +8665,14 @@
         const engineMessages = chat.messages
           .filter(message => !message.typing && !isTemporalMessageExpired(message))
           .map(message => ({ role: message.role, content: message.content }));
+        if (Array.isArray(resolvedMentions.files) && resolvedMentions.files.length) {
+          resolvedMentions.files.slice().reverse().forEach(file => {
+            engineMessages.unshift({
+              role: 'user',
+              content: '[Archivo referenciado: ' + file.path + ']\n' + (file.content || '[Contenido no disponible]')
+            });
+          });
+        }
         if (chat.contextMessage && chat.contextMessage.content) {
           engineMessages.unshift({ role: 'user', content: '[Contexto]: ' + chat.contextMessage.content });
         }
