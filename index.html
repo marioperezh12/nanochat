@@ -4358,6 +4358,20 @@
       };
     }
 
+    function getChatTagStateFromInput(value, caretIndex) {
+      const text = String(value || '');
+      const caret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : text.length, text.length));
+      const beforeCaret = text.slice(0, caret);
+      const hashIndex = beforeCaret.lastIndexOf('#');
+      if (hashIndex === -1) return null;
+      const query = beforeCaret.slice(hashIndex + 1);
+      if (/\s/.test(query)) return null;
+      return {
+        tokenStart: hashIndex,
+        query: query.trim().toLowerCase()
+      };
+    }
+
     function hideMentionMenu(panel) {
       const menu = panel?.querySelector('.mention-menu');
       if (!menu) return;
@@ -4366,27 +4380,46 @@
       menu.innerHTML = '';
     }
 
+    function getChatNameSuggestions(query) {
+      const normalized = String(query || '').trim().toLowerCase();
+      return chatState
+        .filter(chat => chat && !chat.deleted)
+        .filter(chat => {
+          const name = String(chat.name || '').toLowerCase();
+          return !normalized || name.includes(normalized);
+        })
+        .sort((a, b) => {
+          const aName = String(a.name || '').toLowerCase();
+          const bName = String(b.name || '').toLowerCase();
+          const aScore = aName.startsWith(normalized) ? 0 : 1;
+          const bScore = bName.startsWith(normalized) ? 0 : 1;
+          return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
+        })
+        .slice(0, 10)
+        .map(chat => ({ name: chat.name, path: chat.name }));
+    }
+
     function renderMentionMenu(chat, panel, input) {
       const menu = panel?.querySelector('.mention-menu');
       if (!menu || !input) return;
-      const files = getChatFolderFileEntries(chat);
-      if (!files.length) {
-        hideMentionMenu(panel);
-        return;
-      }
-      const state = getMentionStateFromInput(input.value, input.selectionStart ?? input.value.length);
+      const caret = input.selectionStart ?? input.value.length;
+      const fileState = getMentionStateFromInput(input.value, caret);
+      const chatStateMatch = getChatTagStateFromInput(input.value, caret);
+      const state = fileState || chatStateMatch;
       if (!state) {
         hideMentionMenu(panel);
         return;
       }
+      const isChatTag = Boolean(chatStateMatch && chatStateMatch.tokenStart === state.tokenStart);
       const query = state.query;
+      const sourceItems = isChatTag ? getChatNameSuggestions(query) : getChatFolderFileEntries(chat);
       const filtered = (query
-        ? files.filter(item => {
+        ? sourceItems.filter(item => {
           const name = String(item.name || '').toLowerCase();
           const path = String(item.path || '').toLowerCase();
           return name.includes(query) || path.includes(query);
         })
-        : files.slice()
+        : sourceItems.slice()
       ).sort((a, b) => {
         const aName = String(a.name || '').toLowerCase();
         const bName = String(b.name || '').toLowerCase();
@@ -4397,7 +4430,7 @@
         return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
       }).slice(0, 10);
       if (!filtered.length) {
-        menu.innerHTML = '<div class="empty-state">Sin archivos que coincidan</div>';
+        menu.innerHTML = '<div class="empty-state">' + (isChatTag ? 'Sin chats que coincidan' : 'Sin archivos que coincidan') + '</div>';
         menu.hidden = false;
         menu.classList.add('open');
         chat.mentionSuggestions = [];
@@ -4410,7 +4443,7 @@
       chat.mentionTokenStart = state.tokenStart;
       menu.innerHTML = filtered.map((item, index) => (
         '<button type="button" class="mention-item' + (index === chat.mentionActiveIndex ? ' active' : '') + '" data-mention-index="' + index + '" data-mention-path="' + escapeHtml(item.path) + '">'
-        + '<span class="mention-item-name">@' + escapeHtml(item.name || item.path) + '</span>'
+        + '<span class="mention-item-name">' + (isChatTag ? '#' : '@') + escapeHtml(item.name || item.path) + '</span>'
         + '<span class="mention-item-path">' + escapeHtml(item.path || '') + '</span>'
         + '</button>'
       )).join('');
@@ -4427,12 +4460,13 @@
       const item = suggestions[safeIndex];
       if (!item) return;
       const caret = input.selectionStart ?? input.value.length;
-      const tokenStart = Number.isFinite(chat.mentionTokenStart) ? chat.mentionTokenStart : input.value.lastIndexOf('@', caret);
+      const tokenStart = Number.isFinite(chat.mentionTokenStart) ? chat.mentionTokenStart : Math.max(input.value.lastIndexOf('@', caret), input.value.lastIndexOf('#', caret));
       const start = tokenStart >= 0 ? tokenStart : caret;
-      const nextValue = input.value.slice(0, start) + '@' + (item.path || item.name || '') + ' ' + input.value.slice(caret);
+      const triggerChar = input.value.slice(start, start + 1) === '#' ? '#' : '@';
+      const nextValue = input.value.slice(0, start) + triggerChar + (item.path || item.name || '') + ' ' + input.value.slice(caret);
       input.value = nextValue;
       input.focus();
-      const nextCaret = (input.value.slice(0, start) + '@' + (item.path || item.name || '') + ' ').length;
+      const nextCaret = (input.value.slice(0, start) + triggerChar + (item.path || item.name || '') + ' ').length;
       input.setSelectionRange(nextCaret, nextCaret);
       chat.draftText = nextValue;
       chat.mentionSuggestions = [];
@@ -7816,10 +7850,6 @@
         const chatInput = panel.querySelector('.chat-message-input');
         const mentionMenu = panel.querySelector('.mention-menu');
         const refreshMentionMenu = () => {
-          if (!chat.folderSelection) {
-            hideMentionMenu(panel);
-            return;
-          }
           renderMentionMenu(chat, panel, chatInput);
         };
         chatInput.addEventListener('pointerdown', (event) => event.stopPropagation());
