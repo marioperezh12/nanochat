@@ -1701,6 +1701,12 @@
       color: rgba(226, 232, 240, 0.92);
     }
 
+    .message.powershell-message {
+      background: rgba(148, 163, 184, 0.14);
+      border-color: rgba(148, 163, 184, 0.28);
+      color: rgba(226, 232, 240, 0.9);
+    }
+
     .hint-message {
       color: var(--muted);
       font-style: italic;
@@ -1724,6 +1730,7 @@
 
     .message.user:hover .message-actions,
     .message.assistant:hover .message-actions,
+    .message.powershell-message:hover .message-actions,
     .message.summary-message:hover .message-actions,
     .message.context-message:hover .message-actions {
       opacity: 1;
@@ -7588,7 +7595,9 @@
               const summaryActions = '<div class="message-actions">' + summaryReplicateBtn + summaryDeleteBtn + '</div>';
               return '<div class="message summary-message' + (isExpired ? ' expired' : '') + '" data-msg-index="' + i + '">' + body + summaryActions + '</div>';
             }
-            const cls = message.isRule ? 'rule-message' : (message.role === 'user' ? 'user' : 'assistant');
+            const cls = message.isRule
+              ? 'rule-message'
+              : ((message.isPowerShell || message.isPowerShellResult) ? 'powershell-message' : (message.role === 'user' ? 'user' : 'assistant'));
             const isPinned = activePinnedIndices.includes(i);
             const plain = (message.rawText || message.content || '').trim();
             const isLast = i === lastMsgIndex;
