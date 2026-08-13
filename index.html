@@ -4591,6 +4591,41 @@
       return String(value || '').trim().toLowerCase();
     }
 
+    function getConnectionProfiles() {
+      try {
+        const raw = localStorage.getItem(CONNECTION_PROFILES_STORAGE) || '[]';
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function getConnectionProfileIdSuggestions(query) {
+      const normalized = String(query || '').trim().toLowerCase();
+      return getConnectionProfiles()
+        .filter(profile => profile && profile.id)
+        .filter(profile => {
+          const id = String(profile.id || '').toLowerCase();
+          const name = String(profile.name || '').toLowerCase();
+          return !normalized || id.includes(normalized) || name.includes(normalized);
+        })
+        .sort((a, b) => {
+          const aId = String(a.id || '').toLowerCase();
+          const bId = String(b.id || '').toLowerCase();
+          const aName = String(a.name || '').toLowerCase();
+          const bName = String(b.name || '').toLowerCase();
+          const aScore = aId.startsWith(normalized) ? 0 : aName.startsWith(normalized) ? 1 : 2;
+          const bScore = bId.startsWith(normalized) ? 0 : bName.startsWith(normalized) ? 1 : 2;
+          return aScore - bScore || aId.localeCompare(bId, 'es', { sensitivity: 'base' });
+        })
+        .slice(0, 10)
+        .map(profile => ({
+          name: 'Conexión: ' + profile.id,
+          path: profile.id
+        }));
+    }
+
     function findChatFolderFileEntry(chat, mentionText) {
       const target = normalizeFileEntryText(mentionText);
       if (!target) return null;
@@ -4810,11 +4845,16 @@
       const caret = Math.max(0, Math.min(Number.isFinite(caretIndex) ? caretIndex : text.length, text.length));
       const beforeCaret = text.slice(0, caret);
       const atIndex = beforeCaret.lastIndexOf('@');
-      if (atIndex === -1) return null;
-      const query = beforeCaret.slice(atIndex + 1);
+      const dollarIndex = beforeCaret.lastIndexOf('$');
+      const tokenStart = Math.max(atIndex, dollarIndex);
+      if (tokenStart === -1) return null;
+      const triggerChar = beforeCaret.slice(tokenStart, tokenStart + 1);
+      if (triggerChar !== '@' && triggerChar !== '$') return null;
+      const query = beforeCaret.slice(tokenStart + 1);
       if (/\s/.test(query)) return null;
       return {
-        tokenStart: atIndex,
+        tokenStart,
+        triggerChar,
         query: query.trim().toLowerCase()
       };
     }
@@ -4872,8 +4912,13 @@
         return;
       }
       const isChatTag = Boolean(chatStateMatch && chatStateMatch.tokenStart === state.tokenStart);
+      const isConnectionTag = Boolean(fileState && fileState.triggerChar === '$');
       const query = state.query;
-      const sourceItems = isChatTag ? getChatNameSuggestions(query) : getChatFolderFileEntries(chat);
+      const sourceItems = isChatTag
+        ? getChatNameSuggestions(query)
+        : isConnectionTag
+          ? getConnectionProfileIdSuggestions(query)
+          : getChatFolderFileEntries(chat);
       const filtered = (query
         ? sourceItems.filter(item => {
           const name = String(item.name || '').toLowerCase();
@@ -4891,7 +4936,7 @@
         return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
       }).slice(0, 10);
       if (!filtered.length) {
-        menu.innerHTML = '<div class="empty-state">' + (isChatTag ? 'Sin chats que coincidan' : 'Sin archivos que coincidan') + '</div>';
+        menu.innerHTML = '<div class="empty-state">' + (isChatTag ? 'Sin chats que coincidan' : isConnectionTag ? 'Sin perfiles de conexión que coincidan' : 'Sin archivos que coincidan') + '</div>';
         menu.hidden = false;
         menu.classList.add('open');
         chat.mentionSuggestions = [];
@@ -4904,7 +4949,7 @@
       chat.mentionTokenStart = state.tokenStart;
       menu.innerHTML = filtered.map((item, index) => (
         '<button type="button" class="mention-item' + (index === chat.mentionActiveIndex ? ' active' : '') + '" data-mention-index="' + index + '" data-mention-path="' + escapeHtml(item.path) + '">'
-        + '<span class="mention-item-name">' + (isChatTag ? '#' : '@') + escapeHtml(item.name || item.path) + '</span>'
+        + '<span class="mention-item-name">' + (isChatTag ? '#' : isConnectionTag ? '$' : '@') + escapeHtml(item.name || item.path) + '</span>'
         + '<span class="mention-item-path">' + escapeHtml(item.path || '') + '</span>'
         + '</button>'
       )).join('');
@@ -4923,7 +4968,7 @@
       const caret = input.selectionStart ?? input.value.length;
       const tokenStart = Number.isFinite(chat.mentionTokenStart) ? chat.mentionTokenStart : Math.max(input.value.lastIndexOf('@', caret), input.value.lastIndexOf('#', caret));
       const start = tokenStart >= 0 ? tokenStart : caret;
-      const triggerChar = input.value.slice(start, start + 1) === '#' ? '#' : '@';
+      const triggerChar = input.value.slice(start, start + 1) === '#' ? '#' : (input.value.slice(start, start + 1) === '$' ? '$' : '@');
       const nextValue = input.value.slice(0, start) + triggerChar + (item.path || item.name || '') + ' ' + input.value.slice(caret);
       input.value = nextValue;
       input.focus();
