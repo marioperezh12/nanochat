@@ -1,4 +1,4 @@
-
+﻿
     const chatGrid = document.getElementById('chatGrid');
     const newChatBtn = document.getElementById('newChatBtn');
     const columnsWrap = document.getElementById('columnsWrap');
@@ -911,6 +911,56 @@
       return await readFileAsText(fileRef);
     }
 
+    function buildIndexTreeSummary(graph) {
+      const lines = [];
+      const files = Array.isArray(graph?.files) && graph.files.length
+        ? graph.files
+        : Array.isArray(graph?.nodes)
+          ? graph.nodes.filter(node => node.type === 'file').map(node => ({
+            path: node.path || node.label || 'archivo',
+            name: node.name || node.label || node.path || 'archivo',
+            refs: Array.isArray(node.refs) ? node.refs : [],
+            functions: []
+          }))
+          : [];
+
+      files.forEach((file, fileIndex) => {
+        const path = String(file.path || file.name || 'archivo');
+        lines.push(path);
+
+        const refs = Array.isArray(file.refs) ? file.refs : [];
+        if (refs.length) {
+          lines.push('  refs');
+          refs.forEach(ref => {
+            lines.push('    ' + ref.name + ' -> ' + ref.source);
+          });
+          lines.push('');
+        }
+
+        const functions = Array.isArray(file.functions) ? file.functions : [];
+        if (!functions.length) {
+          lines.push('  Sin funciones detectadas');
+          if (fileIndex < files.length - 1) lines.push('');
+          return;
+        }
+
+        functions.forEach(fn => {
+          const name = String(fn?.nombre || fn?.name || '').trim();
+          if (!name) return;
+          const calls = Array.isArray(fn.calls) ? fn.calls : Array.isArray(fn.llamadas) ? fn.llamadas : [];
+          const normalizedCalls = calls
+            .map(call => String(call || '').replace(/^this\./, '').trim())
+            .filter(call => call && !/^(Get|Post|Put|Delete|Patch|UseGuards|UseInterceptors|Body|Query|Param|UploadedFile|UsuarioActual|Controller|Injectable)$/.test(call))
+            .filter((call, index, arr) => arr.indexOf(call) === index);
+          lines.push('  ' + name + (normalizedCalls.length ? ' -> ' + normalizedCalls.join(', ') : ''));
+        });
+
+        if (fileIndex < files.length - 1) lines.push('');
+      });
+
+      return lines.join('\n');
+    }
+
     async function loadFolderFilePreview(chat, filePath) {
       if (!chat?.folderSelection?.tree || !filePath) return null;
       const node = findFolderTreeFileNode(chat.folderSelection.tree, filePath);
@@ -1259,6 +1309,7 @@
       const commands = [
         { name: 'contexto', path: 'contexto', desc: 'Fija un mensaje de contexto siempre visible al inicio del chat' },
         { name: 'anclar-archivo', path: 'anclar-archivo', desc: 'Escribe el comando y luego menciona un archivo para anclarlo' },
+        { name: 'indexar-archivos', path: 'indexar-archivos', desc: 'Indexa archivos TypeScript, JavaScript o CSS de la carpeta' },
         { name: 'ramas-paralelas', path: 'ramas-paralelas', desc: 'Crea ramas hijas paralelas desde este chat' },
         { name: 'ramas-secuenciales', path: 'ramas-secuenciales', desc: 'Crea una cadena secuencial de ramas hacia la derecha' },
         { name: 'multi-ia', path: 'multi-ia', desc: 'Consulta varios motores con el mismo mensaje' },
@@ -3765,6 +3816,8 @@
         handlePowerShellCommand(chat);
       } else if (command === 'anclar-archivo') {
         handleAnclarArchivoCommand(chat);
+      } else if (command === 'indexar-archivos') {
+        handleIndexarArchivosCommand(chat);
       }
     }
 
@@ -3796,6 +3849,65 @@
           freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
         } catch (error) { }
       });
+    }
+
+    async function handleIndexarArchivosCommand(chat, filterText) {
+      const selection = chat?.folderSelection || null;
+      if (!selection) {
+        setTemporaryChatStatus(chat, 'Primero selecciona una carpeta para indexar.', 4200);
+        return;
+      }
+
+      const entries = getChatFolderFileEntries(chat).filter(item => /\.(ts|js|css)$/i.test(String(item.path || item.name || '')));
+      const targets = String(filterText || '').trim();
+      const requested = targets
+        ? targets.split(/[\s,]+/g).map(item => item.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
+        : [];
+      const filteredEntries = requested.length
+        ? entries.filter(item => {
+            const name = String(item.name || '').toLowerCase();
+            const path = String(item.path || '').toLowerCase();
+            return requested.some(token => name === token || path.endsWith('/' + token) || path.endsWith('\\' + token) || path.includes(token));
+          })
+        : entries;
+
+      if (!filteredEntries.length) {
+        setTemporaryChatStatus(chat, 'No encontré archivos indexables para ese filtro.', 4200);
+        return;
+      }
+
+      const files = [];
+      for (const entry of filteredEntries) {
+        const filePath = entry.path || entry.name;
+        const fileRef = getLiveFolderFileReference(chat, filePath);
+        if (!fileRef) continue;
+        try {
+          const content = await readLiveFolderFileText(fileRef);
+          files.push({ name: entry.name || filePath, path: filePath, content });
+        } catch (error) {
+          files.push({ name: entry.name || filePath, path: filePath, content: '' });
+        }
+      }
+
+      const indexer = window.nanochatTsIndexer;
+      if (!indexer || typeof indexer.buildFunctionGraph !== 'function') {
+        setTemporaryChatStatus(chat, 'No está disponible el indexador local.', 4200);
+        return;
+      }
+
+      const graph = indexer.buildFunctionGraph(files, filterText);
+      const summaryText = buildIndexTreeSummary(graph);
+      const codeBlockText = '```text\n' + summaryText + '\n```';
+      const replyMessage = {
+        role: 'assistant',
+        content: codeBlockText,
+        display: formatMarkdown(codeBlockText),
+        rawText: summaryText,
+        isIndexResult: true
+      };
+      chat.messages.push(replyMessage);
+      saveChatToStorage(chat);
+      renderChats();
     }
 
     function handleRuleCommand(chat) {
@@ -6448,6 +6560,20 @@
           await handleMultiIaCommand(chat, (multiIaMatch[1] || '').trim());
         } catch (error) {
           const errorText = error && error.message ? error.message : 'No se pudo ejecutar /multi-ia.';
+          chat.statusMessage = null;
+          setTemporaryChatStatus(chat, errorText, 4200);
+        }
+        return;
+      }
+
+      const indexarMatch = text.match(/^\/indexar-archivos(?:\s+([\s\S]*))?$/i);
+      if (indexarMatch) {
+        input.value = '';
+        chat.draftText = '';
+        try {
+          await handleIndexarArchivosCommand(chat, (indexarMatch[1] || '').trim());
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /indexar-archivos.';
           chat.statusMessage = null;
           setTemporaryChatStatus(chat, errorText, 4200);
         }

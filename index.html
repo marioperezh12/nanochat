@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
   <script src="/node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="folder-browser.js"></script>
+  <script src="ts-indexer.js"></script>
+  <script src="ts-graph-visualizer.js"></script>
   <script>
     (function () {
       try {
@@ -1840,13 +1842,6 @@
       display: none;
     }
 
-    .chat-panel.folder-open .panel-input,
-    .chat-panel.folder-open .reply-banner,
-    .chat-panel.folder-open .version-banner,
-    .chat-panel.folder-open .status-banner,
-    .chat-panel.folder-open .branches-banner {
-      display: none;
-    }
 
     .chat-panel.folder-open .panel-body.panel-folder-body {
       flex: 1 1 auto;
@@ -3691,6 +3686,9 @@
 
 </body>
 </html>
+
+
+
 
 
 
