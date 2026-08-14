@@ -1158,6 +1158,30 @@
       return node;
     }
 
+    async function openFileInPreviewPanel(chat, filePath) {
+      if (!chat?.folderSelection || !filePath) return null;
+      chat.folderPanelOpen = true;
+      chat.folderPreviewPath = filePath;
+      chat.folderPreviewLoading = true;
+      chat.folderPreviewError = null;
+      saveChatToStorage(chat);
+      renderChats();
+      const previewNode = await loadFolderFilePreview(chat, filePath);
+      if (!previewNode) {
+        chat.folderPreviewLoading = false;
+        chat.folderPreviewError = 'No se pudo cargar la vista previa del archivo.';
+        chat.statusMessage = 'No se pudo cargar la vista previa del archivo.';
+        saveChatToStorage(chat);
+        renderChats();
+        return null;
+      }
+      chat.folderPreviewLoading = false;
+      chat.folderPreviewError = null;
+      saveChatToStorage(chat);
+      renderChats();
+      return previewNode;
+    }
+
     function escapeAttribute(value) {
       return escapeHtml(String(value ?? '')).replace(/"/g, '&quot;');
     }
@@ -1290,6 +1314,19 @@
         path: filePath,
         name: file.name || filePath,
         content: fileText
+      };
+    }
+
+    function buildLocalFilePreviewMessage(file) {
+      const fileName = String(file?.name || file?.path || 'Archivo');
+      const content = typeof file?.content === 'string' ? file.content : '';
+      const rawText = fileName + '\n\n```text\n' + content + '\n```';
+      return {
+        role: 'assistant',
+        content: rawText,
+        display: '<div class="local-preview-title">' + escapeHtml(fileName) + '</div>' + formatMarkdown('```text\n' + content + '\n```'),
+        rawText,
+        isLocalPreviewResult: true
       };
     }
 
@@ -1491,6 +1528,7 @@
       const commands = [
         { name: 'contexto', path: 'contexto', desc: 'Fija un mensaje de contexto siempre visible al inicio del chat' },
         { name: 'anclar-archivo', path: 'anclar-archivo', desc: 'Escribe el comando y luego menciona un archivo para anclarlo' },
+        { name: 'preview', path: 'preview', desc: 'Carga un archivo mencionado en el panel de vista previa' },
         { name: 'indexar-archivos', path: 'indexar-archivos', desc: 'Indexa archivos TypeScript, JavaScript o CSS de la carpeta' },
         { name: 'indexar-archivos-recursivo', path: 'indexar-archivos-recursivo', desc: 'Indexa archivos y sigue refs locales sin repetir archivos ya resueltos' },
         { name: 'ramas-paralelas', path: 'ramas-paralelas', desc: 'Crea ramas hijas paralelas desde este chat' },
@@ -2461,6 +2499,7 @@
         + '<button type="button" class="console-item panzoom-exclude" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -3999,6 +4038,8 @@
         handlePowerShellCommand(chat);
       } else if (command === 'anclar-archivo') {
         handleAnclarArchivoCommand(chat);
+      } else if (command === 'preview') {
+        handlePreviewCommand(chat);
       } else if (command === 'indexar-archivos') {
         handleIndexarArchivosCommand(chat);
       } else if (command === 'indexar-archivos-recursivo') {
@@ -4073,6 +4114,21 @@
 
     function handleIndexarArchivosRecursivoCommand(chat) {
       chat.draftText = '/indexar-archivos-recursivo ';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    function handlePreviewCommand(chat) {
+      chat.draftText = '/preview ';
       renderChats();
       requestAnimationFrame(() => {
         const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
@@ -4673,7 +4729,9 @@
             }
             const cls = message.isRule
               ? 'rule-message'
-              : ((message.isPowerShell || message.isPowerShellResult) ? 'powershell-message' : (message.role === 'user' ? 'user' : 'assistant'));
+              : (message.isLocalPreviewResult
+                ? 'local-preview-message'
+                : ((message.isPowerShell || message.isPowerShellResult) ? 'powershell-message' : (message.role === 'user' ? 'user' : 'assistant')));
             const isPinned = activePinnedIndices.includes(i);
             const plain = (message.rawText || message.content || '').trim();
             const isLast = i === lastMsgIndex;
@@ -4695,7 +4753,7 @@
                 ? '<div class="message-actions"><button type="button" class="msg-edit" data-msg-index="' + i + '" title="Editar">&#9998;</button><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replicateBtn + replyBtn + deleteBtn + '</div>'
                 : '<div class="message-actions"><button type="button" class="msg-copy" data-msg-index="' + i + '" title="Copiar">&#128203;</button>' + pinBtn + replicateBtn + replyBtn + deleteBtn + '</div>';
             }
-            return '<div class=\"message ' + cls + (isPinned ? ' pinned' : '') + (isExpired ? ' expired' : '') + '\" data-msg-index=\"' + i + '\">' + body + actions + '</div>';
+            return '<div class=\"message ' + cls + (isPinned ? ' pinned' : '') + (isExpired || message.isLocalPreviewResult ? ' expired' : '') + '\" data-msg-index=\"' + i + '\">' + body + actions + '</div>';
           }).join('')
           : '';
 
@@ -4767,6 +4825,7 @@
           + '<button type="button" class="console-item" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
           + '<button type="button" class="console-item" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
           + '<button type="button" class="console-item" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
+          + '<button type="button" class="console-item" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
           + '<button type="button" class="console-item" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -4953,23 +5012,10 @@
             event.stopPropagation();
             const filePath = folderFileLink.getAttribute('data-file-path');
             if (!chat.folderSelection || !filePath) return;
-            chat.folderPanelOpen = true;
-            chat.folderPreviewPath = filePath;
-            chat.folderPreviewLoading = true;
-            chat.folderPreviewError = null;
-            saveChatToStorage(chat);
-            renderChats();
-            Promise.resolve(loadFolderFilePreview(chat, filePath)).then((previewNode) => {
-              if (!previewNode) {
-                chat.folderPreviewLoading = false;
-                chat.folderPreviewError = 'No se pudo cargar la vista previa del archivo.';
-                chat.statusMessage = 'No se pudo cargar la vista previa del archivo.';
-                saveChatToStorage(chat);
-                renderChats();
-                return;
-              }
+            Promise.resolve(openFileInPreviewPanel(chat, filePath)).catch(() => {
               chat.folderPreviewLoading = false;
-              chat.folderPreviewError = null;
+              chat.folderPreviewError = 'No se pudo cargar la vista previa del archivo.';
+              chat.statusMessage = 'No se pudo cargar la vista previa del archivo.';
               saveChatToStorage(chat);
               renderChats();
             });
@@ -6850,9 +6896,43 @@
         return;
       }
 
+      const previewMatch = text.match(/^\/preview(?:\s+([\s\S]*))?$/i);
+      if (previewMatch) {
+        const mentionText = (previewMatch[1] || '').trim();
+        input.value = '';
+        chat.draftText = '';
+        if (!mentionText || !/^@([^\s@]+)$/.test(mentionText)) {
+          setTemporaryChatStatus(chat, 'Este mensaje debe ir acompañado de un archivo', 4200);
+          return;
+        }
+        const previewFile = await resolveFileByMention(chat, mentionText.slice(1));
+        if (!previewFile) {
+          setTemporaryChatStatus(chat, 'No encontré ese archivo para vista previa.', 4200);
+          return;
+        }
+        await openFileInPreviewPanel(chat, previewFile.path);
+        return;
+      }
+
       if (chat.editingIndex != null) {
         chat.messages = chat.messages.slice(0, chat.editingIndex);
         chat.editingIndex = null;
+      }
+
+      const singleMentionMatch = text.trim().match(/^@([^\s@]+)$/);
+      if (singleMentionMatch) {
+        const localFile = await resolveFileByMention(chat, singleMentionMatch[1]);
+        if (localFile) {
+          chat.messages.push(buildLocalFilePreviewMessage(localFile));
+          chat.attachment = null;
+          chat.focused = true;
+          chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+          input.value = '';
+          chat.draftText = '';
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        }
       }
 
       const resolvedMentions = await resolveMentionedFiles(chat, text);
@@ -6905,7 +6985,7 @@
 
       try {
         const engineMessages = chat.messages
-          .filter(message => !message.typing && !message.isRule && !message.isPowerShell && !isTemporalMessageExpired(message))
+          .filter(message => !message.typing && !message.isRule && !message.isPowerShell && !message.isLocalPreviewResult && !isTemporalMessageExpired(message))
           .map(message => ({ role: message.role, content: message.content }));
         if (chat.pinnedFileContext && chat.pinnedFileContext.path) {
           const pinnedFileContext = await resolveFileByMention(chat, chat.pinnedFileContext.path) || chat.pinnedFileContext;

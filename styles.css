@@ -1932,6 +1932,20 @@
       scrollbar-width: thin;
     }
 
+    .message.local-preview-message .local-preview-title {
+      margin-bottom: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #d7dde4;
+    }
+
+    .message.local-preview-message .code-block-wrap {
+      max-height: 100px;
+      overflow: auto;
+      padding-right: 6px;
+      scrollbar-width: thin;
+    }
+
     .index-result-summary {
       color: var(--muted);
       font-size: 0.75rem;
@@ -2066,6 +2080,7 @@
 
     .message.user:hover .message-actions,
     .message.assistant:hover .message-actions,
+    .message.local-preview-message:hover .message-actions,
     .message.powershell-message:hover .message-actions,
     .message.summary-message:hover .message-actions,
     .message.context-message:hover .message-actions {
