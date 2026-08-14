@@ -1330,6 +1330,175 @@
       };
     }
 
+    function parseChainSyntax(text) {
+      const source = String(text || '');
+      if (!source.includes('->')) return null;
+      const stages = source
+        .split(/\s*->\s*/g)
+        .map(stage => String(stage || '').trim())
+        .filter(Boolean);
+      if (stages.length < 2) return null;
+      return { stages };
+    }
+
+    function extractChatTargetsFromText(text) {
+      const matches = [...String(text || '').matchAll(/#(?:"([^"]+)"|([^\s#]+(?:\s+[^\s#]+)*?))(?:\s|$)/g)];
+      return matches
+        .map(match => String(match[1] || match[2] || '').trim())
+        .filter(Boolean);
+    }
+
+    function stripChatTargetsFromText(text) {
+      return String(text || '')
+        .replace(/#(?:"([^"]+)"|([^\s#]+(?:\s+[^\s#]+)*?))(?:\s|$)/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function buildChainedStagePrompt(actionText, previousResult) {
+      const action = String(actionText || '').trim() || 'Actúa sobre el resultado recibido.';
+      const prior = String(previousResult || '').trim() || '[Sin resultado previo]';
+      return '[Resultado previo]\n' + prior + '\n\n[Acción]\n' + action;
+    }
+
+    function buildChainRelayMessage(sourceChat, actionText, previousResult) {
+      const sourceName = sourceChat?.name ? '#' + sourceChat.name : 'otro chat';
+      const promptText = buildChainedStagePrompt(actionText, previousResult);
+      return {
+        role: 'user',
+        content: '[Encadenamiento desde ' + sourceName + ']\n' + promptText,
+        display: formatMarkdown('[Encadenamiento desde ' + sourceName + ']\n' + promptText),
+        rawText: '[Encadenamiento desde ' + sourceName + ']\n' + promptText,
+        isChainRelay: true
+      };
+    }
+
+    async function buildEngineMessagesForChat(chat, options = {}) {
+      const history = (Array.isArray(chat?.messages) ? chat.messages : [])
+        .filter(message => message !== options.excludeMessage)
+        .filter(message => !message.typing && !message.isRule && !message.isPowerShell && !message.isLocalPreviewResult && !isTemporalMessageExpired(message))
+        .map(message => ({ role: message.role, content: message.content }));
+
+      if (chat?.pinnedFileContext?.path) {
+        const pinnedFileContext = await resolveFileByMention(chat, chat.pinnedFileContext.path) || chat.pinnedFileContext;
+        history.unshift({
+          role: 'user',
+          content: '[Archivo anclado: ' + pinnedFileContext.path + ']\n' + (pinnedFileContext.content || '[Contenido no disponible]')
+        });
+      }
+
+      const mentionedFiles = Array.isArray(options.mentionedFiles) ? options.mentionedFiles : [];
+      mentionedFiles.slice().reverse().forEach(file => {
+        history.unshift({
+          role: 'user',
+          content: '[Archivo referenciado: ' + file.path + ']\n' + (file.content || '[Contenido no disponible]')
+        });
+      });
+
+      if (chat?.contextMessage?.content) {
+        history.unshift({ role: 'user', content: '[Contexto]: ' + chat.contextMessage.content });
+      }
+
+      const extraMessages = Array.isArray(options.extraMessages) ? options.extraMessages : [];
+      extraMessages.forEach(message => history.push(message));
+
+      if (options.promptText) {
+        history.push({ role: 'user', content: String(options.promptText) });
+      }
+
+      return history;
+    }
+
+    async function executeChainedMessage(chat, rawText, userMessage) {
+      const chain = parseChainSyntax(rawText);
+      if (!chain) return false;
+
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        chat.messages.push({ role: 'assistant', content: 'Conecta tu API key de ' + engineName + ' para responder.' });
+        saveChatToStorage(chat);
+        renderChats();
+        return true;
+      }
+
+      let currentChat = chat;
+      let previousResult = '';
+      let finalFocusChat = chat;
+
+      for (let stageIndex = 0; stageIndex < chain.stages.length; stageIndex += 1) {
+        const stageText = chain.stages[stageIndex];
+        const targetNames = stageIndex > 0 ? extractChatTargetsFromText(stageText) : [];
+        const targetName = targetNames.length ? targetNames[targetNames.length - 1] : '';
+        const executionChat = targetName ? getChatByName(targetName) : currentChat;
+        if (targetName && !executionChat) {
+          setTemporaryChatStatus(chat, 'No encontré el chat destino #' + targetName + '.', 4200);
+          return true;
+        }
+
+        const stageChat = executionChat || currentChat;
+        const cleanedAction = stageIndex === 0 ? stageText : stripChatTargetsFromText(stageText);
+        const resolvedMentions = await resolveMentionedFiles(stageChat, stageText);
+
+        let promptText = '';
+        let relayMessage = null;
+        let excludedMessage = null;
+
+        if (stageIndex === 0) {
+          promptText = resolvedMentions.text || stageText;
+          excludedMessage = userMessage || null;
+        } else if (stageChat !== currentChat || targetName) {
+          relayMessage = buildChainRelayMessage(currentChat, cleanedAction || resolvedMentions.text || stageText, previousResult);
+          if (stageChat.temporalMode) relayMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          stageChat.messages.push(relayMessage);
+          saveChatToStorage(stageChat);
+          renderChats();
+        } else {
+          promptText = buildChainedStagePrompt(cleanedAction || resolvedMentions.text || stageText, previousResult);
+        }
+
+        const typingMessage = { role: 'assistant', typing: true };
+        stageChat.messages.push(typingMessage);
+        saveChatToStorage(stageChat);
+        renderChats();
+
+        try {
+          const engineMessages = await buildEngineMessagesForChat(stageChat, {
+            excludeMessage: excludedMessage,
+            mentionedFiles: resolvedMentions.files,
+            promptText,
+            extraMessages: []
+          });
+          const reply = await callSelectedEngine(engineMessages, activeKey);
+          const typingIndex = stageChat.messages.indexOf(typingMessage);
+          const replyMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply), rawText: reply };
+          if (stageChat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          if (typingIndex !== -1) stageChat.messages[typingIndex] = replyMessage; else stageChat.messages.push(replyMessage);
+          saveChatToStorage(stageChat);
+          renderChats();
+          previousResult = reply;
+          currentChat = stageChat;
+          finalFocusChat = stageChat;
+        } catch (error) {
+          const errorText = error && error.message ? error.message : ('No se pudo ejecutar el encadenamiento en ' + engineName + '.');
+          const typingIndex = stageChat.messages.indexOf(typingMessage);
+          const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText), rawText: errorText };
+          if (typingIndex !== -1) stageChat.messages[typingIndex] = errorMessage; else stageChat.messages.push(errorMessage);
+          saveChatToStorage(stageChat);
+          renderChats();
+          return true;
+        }
+      }
+
+      if (finalFocusChat) {
+        finalFocusChat.focused = true;
+        chatState.forEach(item => { if (item.id !== finalFocusChat.id) item.focused = false; });
+        saveChatToStorage(finalFocusChat);
+        renderChats();
+      }
+      return true;
+    }
+
     function parseRuleSyntax(text) {
       const source = String(text || '').trim();
       if (!source.startsWith('>>')) return null;
@@ -6968,6 +7137,11 @@
       chat.draftText = '';
       saveChatToStorage(chat);
       renderChats();
+
+      if (parseChainSyntax(text)) {
+        await executeChainedMessage(chat, text, userMessage);
+        return;
+      }
 
       const engineName = engineLabel(selectedEngine);
       const activeKey = getEngineKey(selectedEngine);
