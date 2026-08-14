@@ -722,8 +722,19 @@
       return name;
     }
 
-    function addNewChat() {
-      const chat = {
+    function generateUniqueBranchChatName(sourceName = '') {
+      const baseName = 'Branch - ' + String(sourceName || 'Chat').trim();
+      let name = baseName;
+      let counter = 2;
+      while (chatState.some(item => item.name === name)) {
+        name = baseName + ' (' + counter + ')';
+        counter += 1;
+      }
+      return name;
+    }
+
+    function createBaseChatState(overrides = {}) {
+      return {
         id: `chat-${Date.now()}-${chatState.length}`,
         name: generateUniqueChatName(),
         minimized: false,
@@ -758,8 +769,12 @@
         pinnedFileContext: null,
         folderSelection: null,
         folderPanelOpen: false,
-        folderPreviewPath: null
+        folderPreviewPath: null,
+        ...overrides
       };
+    }
+
+    function addChatToState(chat) {
       chatState.forEach(item => { item.focused = false; });
       chatState.unshift(chat);
       syncChatPositions();
@@ -770,6 +785,37 @@
         chat.blinked = false;
         renderChats();
       }, 900);
+      return chat;
+    }
+
+    function addNewChat() {
+      const chat = createBaseChatState();
+      addChatToState(chat);
+    }
+
+    function cloneChatStateValue(value) {
+      if (value == null) return value;
+      try {
+        return JSON.parse(JSON.stringify(value));
+      } catch (error) {
+        return value;
+      }
+    }
+
+    function createBranchChatFromSource(sourceChat, options = {}) {
+      const branchChat = createBaseChatState({
+        name: options.name || generateUniqueBranchChatName(),
+        messages: Array.isArray(sourceChat?.messages) ? sourceChat.messages.map(item => cloneChatStateValue(item)) : [],
+        responseMode: sourceChat?.responseMode || 'short',
+        pinnedIndices: Array.isArray(sourceChat?.pinnedIndices) ? sourceChat.pinnedIndices.slice() : [],
+        expandedIndices: Array.isArray(sourceChat?.expandedIndices) ? sourceChat.expandedIndices.slice() : [],
+        contextMessage: cloneChatStateValue(sourceChat?.contextMessage || null),
+        pinnedFileContext: cloneChatStateValue(sourceChat?.pinnedFileContext || null),
+        folderSelection: cloneChatStateValue(sourceChat?.folderSelection || null),
+        folderPanelOpen: false,
+        folderPreviewPath: null
+      });
+      return addChatToState(branchChat);
     }
 
     async function handleChatFolderAction(chatId, options = {}) {
@@ -1330,7 +1376,38 @@
       };
     }
 
+    function buildLocalContextMessage(contextMessage) {
+      const content = String(contextMessage?.rawText || contextMessage?.content || '').trim() || 'No hay contexto establecido.';
+      const rawText = 'Contexto actual\n\n```text\n' + content + '\n```';
+      return {
+        role: 'assistant',
+        content: rawText,
+        display: '<div class="local-preview-title">Contexto actual</div>' + formatMarkdown('```text\n' + content + '\n```'),
+        rawText,
+        isLocalPreviewResult: true,
+        isLocalContextResult: true
+      };
+    }
+
+    function appendToChatContext(chat, textToAppend) {
+      const currentContextText = String(chat?.contextMessage?.rawText || chat?.contextMessage?.content || '').trim();
+      const nextChunk = String(textToAppend || '').trim();
+      const nextContextText = currentContextText
+        ? (currentContextText + '\n' + nextChunk)
+        : nextChunk;
+      chat.contextMessage = {
+        content: nextContextText,
+        display: formatMarkdown(nextContextText),
+        rawText: nextContextText
+      };
+      chat._contextScrollDone = false;
+    }
+
     function parseChainSyntax(text) {
+      const externalRules = window.nanochatInputRules;
+      if (externalRules && typeof externalRules.parseChainSyntax === 'function') {
+        return externalRules.parseChainSyntax(text);
+      }
       const source = String(text || '');
       if (!source.includes('->')) return null;
       const stages = source
@@ -1355,15 +1432,64 @@
         .trim();
     }
 
+    function normalizeChainedActionText(text, hasTarget) {
+      let value = String(text || '').trim();
+      if (!hasTarget || !value) return value;
+      value = value
+        .replace(/^(env[ií]a(?:lo|la|las|les)?|manda(?:lo|la|las|les)?|pas[aá](?:lo|la|las|les)?)(?:\s+a)?\s+/i, '')
+        .replace(/^(dile|p[íi]dele)(?:\s+a)?\s+/i, '')
+        .replace(/^que\s+/i, '')
+        .replace(/^y\s+/i, '')
+        .trim();
+      return value;
+    }
+
+    function shouldDirectTransferChainStage(targetName, cleanedAction) {
+      return Boolean(targetName) && !String(cleanedAction || '').trim();
+    }
+
+    function isSilentContextChain(chain) {
+      const stages = Array.isArray(chain?.stages) ? chain.stages : [];
+      if (stages.length < 2) return false;
+      return stages.slice(1).every(stage => /\/contexto\+?(?:\s|$)/i.test(String(stage || '').trim()));
+    }
+
+    async function resolveInitialChainStageResult(chat, stageText) {
+      const source = String(stageText || '').trim();
+      if (!source) return { handled: false, result: '' };
+
+      const singleMentionMatch = source.match(/^@([^\s@]+)$/);
+      if (singleMentionMatch) {
+        const file = await resolveFileByMention(chat, singleMentionMatch[1]);
+        if (!file) return { handled: true, result: '' };
+        return {
+          handled: true,
+          result: String(file.content || '').trim(),
+          kind: 'file',
+          file
+        };
+      }
+
+      if (/^\/contexto$/i.test(source)) {
+        return {
+          handled: true,
+          result: String(chat?.contextMessage?.rawText || chat?.contextMessage?.content || '').trim(),
+          kind: 'context'
+        };
+      }
+
+      return { handled: false, result: '' };
+    }
+
     function buildChainedStagePrompt(actionText, previousResult) {
       const action = String(actionText || '').trim() || 'Actúa sobre el resultado recibido.';
       const prior = String(previousResult || '').trim() || '[Sin resultado previo]';
       return '[Resultado previo]\n' + prior + '\n\n[Acción]\n' + action;
     }
 
-    function buildChainRelayMessage(sourceChat, actionText, previousResult) {
+    function buildChainRelayMessage(sourceChat, previousResult) {
       const sourceName = sourceChat?.name ? '#' + sourceChat.name : 'otro chat';
-      const promptText = buildChainedStagePrompt(actionText, previousResult);
+      const promptText = '[Resultado previo]\n' + (String(previousResult || '').trim() || '[Sin resultado previo]');
       return {
         role: 'user',
         content: '[Encadenamiento desde ' + sourceName + ']\n' + promptText,
@@ -1371,6 +1497,316 @@
         rawText: '[Encadenamiento desde ' + sourceName + ']\n' + promptText,
         isChainRelay: true
       };
+    }
+
+    function parseBranchCommandArgs(text) {
+      const source = String(text || '').trim();
+      let scope = '';
+      let remainder = source;
+      if (/^\/resumen-anclados(?:\s|$)/i.test(remainder)) {
+        scope = 'anclados';
+        remainder = remainder.replace(/^\/resumen-anclados(?:\s+|$)/i, '').trim();
+      } else if (/^\/resumen-general(?:\s|$)/i.test(remainder)) {
+        scope = 'general';
+        remainder = remainder.replace(/^\/resumen-general(?:\s+|$)/i, '').trim();
+      }
+      return {
+        scope,
+        promptText: remainder
+      };
+    }
+
+    function buildBranchPromptText(promptText, sourceChat) {
+      const prompt = String(promptText || '').trim();
+      if (!prompt) return '';
+      const lastMeaningfulMessage = [...(Array.isArray(sourceChat?.messages) ? sourceChat.messages : [])]
+        .reverse()
+        .find(message => message && !message.typing && !message.isLocalPreviewResult && !isTemporalMessageExpired(message));
+      const lastMessageText = String(lastMeaningfulMessage?.rawText || lastMeaningfulMessage?.content || '').trim();
+      const emphasis = lastMessageText
+        ? '\n\n[Enfoque prioritario]\nPon especial atención al último mensaje de la conversación original:\n' + lastMessageText
+        : '\n\n[Enfoque prioritario]\nPon especial atención al último mensaje relevante de la conversación original.';
+      return prompt + emphasis;
+    }
+
+    function buildBranchSourceResult(sourceChat, scope, summaryText) {
+      if (scope) return String(summaryText || '').trim();
+      const messages = Array.isArray(sourceChat?.messages) ? sourceChat.messages : [];
+      return buildFullConversationText(messages);
+    }
+
+    function splitCommandChainArgs(argsText) {
+      const source = String(argsText || '').trim();
+      const match = source.match(/^(.*?)\s*(->[\s\S]+)$/);
+      if (!match) {
+        return {
+          commandArgs: source,
+          chainText: ''
+        };
+      }
+      return {
+        commandArgs: String(match[1] || '').trim(),
+        chainText: String(match[2] || '').trim()
+      };
+    }
+
+    function parseActionChainStages(text) {
+      return String(text || '')
+        .replace(/^\s*->\s*/, '')
+        .split(/\s*->\s*/g)
+        .map(stage => String(stage || '').trim())
+        .filter(Boolean);
+    }
+
+    function focusChat(chat) {
+      if (!chat) return;
+      chat.focused = true;
+      chatState.forEach(item => { if (item.id !== chat.id) item.focused = false; });
+      saveChatToStorage(chat);
+      renderChats();
+    }
+
+    function cloneMessagesForTransfer(messages) {
+      return (Array.isArray(messages) ? messages : [])
+        .filter(message => message && !message.typing && !message.isLocalPreviewResult && !isTemporalMessageExpired(message))
+        .map(item => cloneChatStateValue(item));
+    }
+
+    async function transferBranchContentToTargetChat(sourceChat, chainText) {
+      const stages = parseActionChainStages(chainText);
+      if (!stages.length) return false;
+      const firstStage = stages[0];
+      const targetNames = extractChatTargetsFromText(firstStage);
+      const targetName = targetNames.length ? targetNames[targetNames.length - 1] : '';
+      if (!targetName) return false;
+      const targetChat = getChatByName(targetName);
+      if (!targetChat) {
+        throw new Error('No encontré el chat destino #' + targetName + '.');
+      }
+      const transferredMessages = cloneMessagesForTransfer(sourceChat?.messages);
+      if (!transferredMessages.length) return false;
+      targetChat.messages.push(...transferredMessages);
+      saveChatToStorage(targetChat);
+      focusChat(targetChat);
+      return true;
+    }
+
+    async function executeChainedStagesFromResult(startChat, actionText, initialResult) {
+      const stages = parseActionChainStages(actionText);
+      if (!stages.length) return false;
+
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        throw new Error('Conecta tu API key de ' + engineName + ' para responder.');
+      }
+
+      let currentChat = startChat;
+      let previousResult = String(initialResult || '').trim();
+      let finalChat = startChat;
+      for (let stageIndex = 0; stageIndex < stages.length; stageIndex += 1) {
+        const stageText = stages[stageIndex];
+        if (stageIndex === 0 && !previousResult) {
+          const initialStage = await resolveInitialChainStageResult(startChat, stageText);
+          if (initialStage.handled) {
+            previousResult = String(initialStage.result || '').trim();
+            continue;
+          }
+        }
+        const targetNames = extractChatTargetsFromText(stageText);
+        const targetName = targetNames.length ? targetNames[targetNames.length - 1] : '';
+        const stageChat = targetName ? getChatByName(targetName) : currentChat;
+        if (targetName && !stageChat) {
+          throw new Error('No encontré el chat destino #' + targetName + '.');
+        }
+        const cleanedAction = normalizeChainedActionText(stripChatTargetsFromText(stageText) || stageText, Boolean(targetName));
+        if (shouldDirectTransferChainStage(targetName, cleanedAction)) {
+          const relayMessage = buildChainRelayMessage(currentChat, previousResult);
+          if (stageChat.temporalMode) relayMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          stageChat.messages.push(relayMessage);
+          saveChatToStorage(stageChat);
+          renderChats();
+          currentChat = stageChat;
+          finalChat = stageChat;
+          continue;
+        }
+        let resolvedMentions = await resolveMentionedFiles(stageChat, cleanedAction);
+        if ((!resolvedMentions.files || !resolvedMentions.files.length) && startChat && startChat !== stageChat) {
+          resolvedMentions = await resolveMentionedFiles(startChat, cleanedAction);
+        }
+        if (/\/contexto\+(?:\s|$)/i.test(stageText)) {
+          appendToChatContext(stageChat, previousResult);
+          saveChatToStorage(stageChat);
+          renderChats();
+          currentChat = stageChat;
+          finalChat = stageChat;
+          continue;
+        }
+        if (/\/contexto\b/i.test(stageText)) {
+          stageChat.contextMessage = {
+            content: previousResult,
+            display: formatMarkdown(previousResult),
+            rawText: previousResult
+          };
+          stageChat._contextScrollDone = false;
+          saveChatToStorage(stageChat);
+          renderChats();
+          currentChat = stageChat;
+          finalChat = stageChat;
+          continue;
+        }
+        if (stageChat !== currentChat || targetName) {
+          const relayMessage = buildChainRelayMessage(currentChat, previousResult);
+          if (stageChat.temporalMode) relayMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          stageChat.messages.push(relayMessage);
+          saveChatToStorage(stageChat);
+          renderChats();
+        }
+
+        try {
+          await sendPromptToChat(stageChat, cleanedAction, {
+            displayText: cleanedAction,
+            rawText: cleanedAction,
+            mentionSourceChat: startChat
+          });
+          const lastAssistant = [...stageChat.messages].reverse().find(message => message && message.role === 'assistant' && !message.typing);
+          previousResult = String(lastAssistant?.rawText || lastAssistant?.content || '').trim();
+          currentChat = stageChat;
+          finalChat = stageChat;
+        } catch (error) {
+          throw error;
+        }
+      }
+      if (finalChat) {
+        finalChat.focused = true;
+        chatState.forEach(item => { if (item.id !== finalChat.id) item.focused = false; });
+        saveChatToStorage(finalChat);
+        renderChats();
+      }
+      return true;
+    }
+
+    async function sendPromptToChat(chat, promptText, options = {}) {
+      const activeKey = getEngineKey(selectedEngine);
+      const engineName = engineLabel(selectedEngine);
+      if (!activeKey) {
+        throw new Error('Conecta tu API key de ' + engineName + ' para responder.');
+      }
+
+      const normalizedPrompt = String(promptText || '').trim();
+      if (!normalizedPrompt) return null;
+
+      const displayText = options.displayText || normalizedPrompt;
+      const rawText = options.rawText || displayText;
+      let resolvedMentions = await resolveMentionedFiles(chat, normalizedPrompt);
+      if ((!resolvedMentions.files || !resolvedMentions.files.length) && options.mentionSourceChat && options.mentionSourceChat !== chat) {
+        resolvedMentions = await resolveMentionedFiles(options.mentionSourceChat, normalizedPrompt);
+      }
+      const userMessage = {
+        role: 'user',
+        content: normalizedPrompt,
+        display: formatMarkdown(displayText),
+        rawText
+      };
+      if (chat.temporalMode) userMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+      chat.messages.push(userMessage);
+      saveChatToStorage(chat);
+      renderChats();
+
+      if (parseChainSyntax(normalizedPrompt)) {
+        await executeChainedMessage(chat, normalizedPrompt, userMessage);
+        return userMessage;
+      }
+
+      const typingMessage = { role: 'assistant', typing: true };
+      chat.messages.push(typingMessage);
+      saveChatToStorage(chat);
+      renderChats();
+
+      try {
+        const engineMessages = await buildEngineMessagesForChat(chat, {
+          excludeMessage: userMessage,
+          promptText: normalizedPrompt,
+          mentionedFiles: resolvedMentions.files
+        });
+        const reply = await callSelectedEngine(engineMessages, activeKey);
+        const typingIndex = chat.messages.indexOf(typingMessage);
+        const replyMessage = { role: 'assistant', content: reply, display: formatMarkdown(reply), rawText: reply };
+        if (chat.temporalMode) replyMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+        if (typingIndex !== -1) chat.messages[typingIndex] = replyMessage; else chat.messages.push(replyMessage);
+        saveChatToStorage(chat);
+        renderChats();
+        return userMessage;
+      } catch (error) {
+        const errorText = error && error.message ? error.message : ('No se pudo ejecutar la instrucción en ' + engineName + '.');
+        const typingIndex = chat.messages.indexOf(typingMessage);
+        const errorMessage = { role: 'assistant', content: errorText, display: escapeHtml(errorText), rawText: errorText };
+        if (typingIndex !== -1) chat.messages[typingIndex] = errorMessage; else chat.messages.push(errorMessage);
+        saveChatToStorage(chat);
+        renderChats();
+        throw error;
+      }
+    }
+
+    async function handleBranchChatCommand(sourceChat, argsText) {
+      const parsed = parseBranchCommandArgs(argsText);
+      const isChainPrompt = /^\s*->/.test(parsed.promptText || '');
+      const chainTargets = isChainPrompt ? extractChatTargetsFromText(parsed.promptText) : [];
+      const shouldBypassBranchCreation = Boolean(isChainPrompt && chainTargets.length);
+      let summaryText = '';
+      if (parsed.scope) {
+        summaryText = await buildChatSummaryText(sourceChat, parsed.scope);
+      }
+
+      const branchChat = shouldBypassBranchCreation
+        ? null
+        : (parsed.scope
+          ? createBaseChatState({ name: generateUniqueBranchChatName(sourceChat?.name || '') })
+          : createBranchChatFromSource(sourceChat, { name: generateUniqueBranchChatName(sourceChat?.name || '') }));
+
+      if (parsed.scope && branchChat) {
+        branchChat.contextMessage = {
+          content: summaryText,
+          display: formatMarkdown(summaryText),
+          rawText: summaryText
+        };
+        branchChat.messages.push({
+          role: 'assistant',
+          content: summaryText,
+          display: formatMarkdown(summaryText),
+          rawText: summaryText,
+          isSummary: true
+        });
+        addChatToState(branchChat);
+        saveChatToStorage(branchChat);
+        renderChats();
+      } else if (branchChat && !chatState.includes(branchChat)) {
+        addChatToState(branchChat);
+      }
+
+      if (parsed.promptText) {
+        if (isChainPrompt) {
+          const initialResult = buildBranchSourceResult(sourceChat, parsed.scope, summaryText);
+          if (!parsed.scope && chainTargets.length) {
+            await transferBranchContentToTargetChat(sourceChat, parsed.promptText);
+          } else {
+            await executeChainedStagesFromResult(sourceChat, parsed.promptText, initialResult);
+          }
+        } else {
+          const promptWithFocus = parsed.scope
+            ? parsed.promptText
+            : buildBranchPromptText(parsed.promptText, sourceChat);
+          await sendPromptToChat(branchChat, promptWithFocus, {
+            displayText: parsed.promptText,
+            rawText: parsed.promptText
+          });
+        }
+      }
+
+      if (branchChat && !isChainPrompt) {
+        focusChat(branchChat);
+      }
+      return branchChat;
     }
 
     async function buildEngineMessagesForChat(chat, options = {}) {
@@ -1412,6 +1848,12 @@
     async function executeChainedMessage(chat, rawText, userMessage) {
       const chain = parseChainSyntax(rawText);
       if (!chain) return false;
+      const firstStageText = Array.isArray(chain.stages) && chain.stages.length ? chain.stages[0] : '';
+      const initialLocalStage = await resolveInitialChainStageResult(chat, firstStageText);
+      if (initialLocalStage && initialLocalStage.handled) {
+        await executeChainedStagesFromResult(chat, rawText, '');
+        return true;
+      }
 
       const activeKey = getEngineKey(selectedEngine);
       const engineName = engineLabel(selectedEngine);
@@ -1693,31 +2135,11 @@
     }
 
     function getLocalCommandSuggestions(query) {
-      const normalized = String(query || '').trim().toLowerCase();
-      const commands = [
-        { name: 'contexto', path: 'contexto', desc: 'Fija un mensaje de contexto siempre visible al inicio del chat' },
-        { name: 'anclar-archivo', path: 'anclar-archivo', desc: 'Escribe el comando y luego menciona un archivo para anclarlo' },
-        { name: 'preview', path: 'preview', desc: 'Carga un archivo mencionado en el panel de vista previa' },
-        { name: 'indexar-archivos', path: 'indexar-archivos', desc: 'Indexa archivos TypeScript, JavaScript o CSS de la carpeta' },
-        { name: 'indexar-archivos-recursivo', path: 'indexar-archivos-recursivo', desc: 'Indexa archivos y sigue refs locales sin repetir archivos ya resueltos' },
-        { name: 'ramas-paralelas', path: 'ramas-paralelas', desc: 'Crea ramas hijas paralelas desde este chat' },
-        { name: 'ramas-secuenciales', path: 'ramas-secuenciales', desc: 'Crea una cadena secuencial de ramas hacia la derecha' },
-        { name: 'multi-ia', path: 'multi-ia', desc: 'Consulta varios motores con el mismo mensaje' },
-        { name: 'resumen-anclados', path: 'resumen-anclados', desc: 'Resume solo los mensajes anclados de este chat' },
-        { name: 'resumen-general', path: 'resumen-general', desc: 'Resume toda la conversacion de este chat' },
-        { name: 'chatsversion', path: 'chatsversion', desc: 'Carga una version anterior guardada de este chat' },
-        { name: 'eliminar', path: 'eliminar', desc: 'Elimina la conversacion actual o una version guardada' }
-      ];
-      return commands
-        .filter(item => !normalized || item.name.toLowerCase().includes(normalized) || item.path.toLowerCase().includes(normalized))
-        .sort((a, b) => {
-          const aName = String(a.name || '').toLowerCase();
-          const bName = String(b.name || '').toLowerCase();
-          const aScore = aName.startsWith(normalized) ? 0 : 1;
-          const bScore = bName.startsWith(normalized) ? 0 : 1;
-          return aScore - bScore || aName.localeCompare(bName, 'es', { sensitivity: 'base' });
-        })
-        .slice(0, 10);
+      const rules = window.nanochatInputRules;
+      if (rules && typeof rules.getCommandSuggestions === 'function') {
+        return rules.getCommandSuggestions(query).slice(0, 10);
+      }
+      return [];
     }
 
     function renderMentionMenu(chat, panel, input) {
@@ -2668,6 +3090,7 @@
         + '<button type="button" class="console-item panzoom-exclude" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="branch">/branch<span class="console-item-desc">Crea un chat Branch derivado del actual</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
@@ -4207,11 +4630,13 @@
         handlePowerShellCommand(chat);
       } else if (command === 'anclar-archivo') {
         handleAnclarArchivoCommand(chat);
+      } else if (command === 'branch') {
+        void handleBranchChatCommand(chat, '');
       } else if (command === 'preview') {
         handlePreviewCommand(chat);
-      } else if (command === 'indexar-archivos') {
+      } else if (command === 'indexar-archivo' || command === 'indexar-archivos') {
         handleIndexarArchivosCommand(chat);
-      } else if (command === 'indexar-archivos-recursivo') {
+      } else if (command === 'indexar-archivo-recursivo' || command === 'indexar-archivos-recursivo') {
         handleIndexarArchivosRecursivoCommand(chat);
       }
     }
@@ -4250,20 +4675,20 @@
       const selection = chat?.folderSelection || null;
       if (!selection) {
         setTemporaryChatStatus(chat, 'Primero selecciona una carpeta para indexar.', 4200);
-        return;
+        return '';
       }
 
       const filteredEntries = getIndexableFolderEntries(chat, filterText);
       if (!filteredEntries.length) {
         setTemporaryChatStatus(chat, 'No encontré archivos indexables para ese filtro.', 4200);
-        return;
+        return '';
       }
       const files = await readIndexableFolderEntries(chat, filteredEntries);
 
       const indexer = window.nanochatTsIndexer;
       if (!indexer || typeof indexer.buildFunctionGraph !== 'function') {
         setTemporaryChatStatus(chat, 'No está disponible el indexador local.', 4200);
-        return;
+        return '';
       }
 
       const graph = indexer.buildFunctionGraph(files, filterText);
@@ -4279,6 +4704,14 @@
       chat.messages.push(replyMessage);
       saveChatToStorage(chat);
       renderChats();
+      return summaryText;
+    }
+
+    async function handleIndexedResultChain(chat, chainText, resultText) {
+      const normalizedChain = String(chainText || '').trim();
+      const normalizedResult = String(resultText || '').trim();
+      if (!normalizedChain || !normalizedResult) return;
+      await executeChainedStagesFromResult(chat, normalizedChain, normalizedResult);
     }
 
     function handleIndexarArchivosRecursivoCommand(chat) {
@@ -4315,17 +4748,17 @@
       const selection = chat?.folderSelection || null;
       if (!selection) {
         setTemporaryChatStatus(chat, 'Primero selecciona una carpeta para indexar.', 4200);
-        return;
+        return '';
       }
 
       const targetPlan = getRecursiveIndexTargets(chat, filterText);
       if (targetPlan.mode === 'missing') {
         setTemporaryChatStatus(chat, 'Debe indicar un archivo para indexar.', 4200);
-        return;
+        return '';
       }
       if (!targetPlan.items.length) {
         setTemporaryChatStatus(chat, 'No encontré archivos que coincidan con ese patrón.', 4200);
-        return;
+        return '';
       }
 
       const sections = [];
@@ -4352,6 +4785,7 @@
       chat.messages.push(replyMessage);
       saveChatToStorage(chat);
       renderChats();
+      return finalText;
     }
 
     function handleRuleCommand(chat) {
@@ -4994,6 +5428,7 @@
           + '<button type="button" class="console-item" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
           + '<button type="button" class="console-item" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
           + '<button type="button" class="console-item" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
+          + '<button type="button" class="console-item" data-command="branch">/branch<span class="console-item-desc">Crea un chat Branch derivado del actual</span></button>'
           + '<button type="button" class="console-item" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
@@ -6593,21 +7028,99 @@
       const input = panel.querySelector('.chat-message-input');
       const text = input.value.trim();
       if (!text) return;
+      const inputRuleState = window.nanochatInputRules && typeof window.nanochatInputRules.evaluate === 'function'
+        ? window.nanochatInputRules.evaluate(text)
+        : { kind: 'text', text, rawText: text };
 
-      const contextoMatch = text.match(/^\/contexto(?:\s+([\s\S]*))?$/is);
-      if (contextoMatch) {
-        const contextoArg = (contextoMatch[1] || '').trim();
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'contexto+') {
+        const appendText = String(inputRuleState.argsText || '').trim();
+        if (!appendText) {
+          setTemporaryChatStatus(chat, 'Debes indicar texto para agregar al contexto.', 4200);
+          input.value = '';
+          chat.draftText = '';
+          return;
+        }
+        appendToChatContext(chat, appendText);
         chat.focused = true;
         chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
         input.value = '';
         chat.draftText = '';
-        const typingMessage = { role: 'assistant', typing: true };
-        chat.messages.push(typingMessage);
         saveChatToStorage(chat);
         renderChats();
+        return;
+      }
 
-
-
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'contexto') {
+        const chainState = splitCommandChainArgs(String(inputRuleState.argsText || ''));
+        const contextoArg = String(chainState.commandArgs || '').trim();
+        const normalizedCommandText = String(inputRuleState.text || text || '').trim();
+        if ((!contextoArg && !chainState.chainText) || /^\/contexto$/i.test(normalizedCommandText)) {
+          const currentContext = cloneChatStateValue(chat.contextMessage || null);
+          chat.messages.push(buildLocalContextMessage(chat.contextMessage));
+          chat.contextMessage = currentContext;
+          chat.focused = true;
+          chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+          input.value = '';
+          chat.draftText = '';
+          renderChats();
+          return;
+        }
+        if (!contextoArg && chainState.chainText) {
+          input.value = '';
+          chat.draftText = '';
+          const currentContextText = String(chat.contextMessage?.rawText || chat.contextMessage?.content || '').trim();
+          await executeChainedStagesFromResult(chat, chainState.chainText, currentContextText);
+          return;
+        }
+        const resolvedContextMentions = await resolveMentionedFiles(chat, contextoArg);
+        const contextoWithoutMentions = String(contextoArg || '').replace(/@([^\s@]+)/g, ' ').replace(/\s+/g, ' ').trim();
+        if (Array.isArray(resolvedContextMentions.files) && resolvedContextMentions.files.length && !contextoWithoutMentions) {
+          const mergedContextText = resolvedContextMentions.files
+            .map(file => String(file.content || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
+          chat.contextMessage = {
+            content: mergedContextText,
+            display: formatMarkdown(mergedContextText),
+            rawText: mergedContextText
+          };
+          chat._contextScrollDone = false;
+          chat.focused = true;
+          chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+          input.value = '';
+          chat.draftText = '';
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        }
+        const contextFileMatch = contextoArg.match(/^@([^\s@]+)$/);
+        if (contextFileMatch) {
+          const contextFile = await resolveFileByMention(chat, contextFileMatch[1]);
+          if (!contextFile) {
+            setTemporaryChatStatus(chat, 'No encontré ese archivo para usarlo como contexto.', 4200);
+            input.value = '';
+            chat.draftText = '';
+            return;
+          }
+          const fileContextText = String(contextFile.content || '').trim();
+          chat.contextMessage = {
+            content: fileContextText,
+            display: formatMarkdown(fileContextText),
+            rawText: fileContextText
+          };
+          chat._contextScrollDone = false;
+          chat.focused = true;
+          chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+          input.value = '';
+          chat.draftText = '';
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        }
+        chat.focused = true;
+        chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+        input.value = '';
+        chat.draftText = '';
         const directTargetMatch = contextoArg.match(/^#([^\s]+(?:\s+[^\s]+)*)$/);
         const resumenGeneralMatch = contextoArg.match(/^\/resumen-general\s+#([^\s]+(?:\s+[^\s]+)*)$/i);
         const resumenAncladosMatch = contextoArg.match(/^\/resumen-anclados\s+#([^\s]+(?:\s+[^\s]+)*)$/i);
@@ -6616,18 +7129,12 @@
           const targetChatName = String((resumenGeneralMatch || resumenAncladosMatch)[1] || '').trim();
           const targetChat = getChatByName(targetChatName);
           if (!targetChat) {
-            const typingIndex = chat.messages.indexOf(typingMessage);
-            if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
-            saveChatToStorage(chat);
-            renderChats();
             setTemporaryChatStatus(chat, 'No encontr� el chat destino #' + targetChatName + '.', 4200);
             return;
           }
           try {
             const summaryType = resumenGeneralMatch ? 'general' : 'anclados';
             const contextoText = await buildChatSummaryText(targetChat, summaryType);
-            const typingIndex = chat.messages.indexOf(typingMessage);
-            if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
             chat.contextMessage = contextoText
               ? { content: contextoText, display: formatMarkdown(contextoText), rawText: contextoText }
               : null;
@@ -6645,15 +7152,9 @@
           const targetChatName = String(directTargetMatch[1] || '').trim();
           const targetChat = getChatByName(targetChatName);
           if (!targetChat) {
-            const typingIndex = chat.messages.indexOf(typingMessage);
-            if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
-            saveChatToStorage(chat);
-            renderChats();
             setTemporaryChatStatus(chat, 'No encontr� el chat destino #' + targetChatName + '.', 4200);
             return;
           }
-          const typingIndex = chat.messages.indexOf(typingMessage);
-          if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
           chat.contextMessage = targetChat.contextMessage
             ? {
                 content: targetChat.contextMessage.content || targetChat.contextMessage.rawText || '',
@@ -6667,8 +7168,6 @@
           return;
         }
 
-        const typingIndex = chat.messages.indexOf(typingMessage);
-        if (typingIndex !== -1) chat.messages.splice(typingIndex, 1);
         chat.contextMessage = contextoArg
           ? { content: contextoArg, display: formatMarkdown(contextoArg), rawText: contextoArg }
           : null;
@@ -7013,12 +7512,15 @@
         return;
       }
 
-      const indexarMatch = text.match(/^\/indexar-archivos(?:\s+([\s\S]*))?$/i);
-      if (indexarMatch) {
+      if (inputRuleState.kind === 'command' && (inputRuleState.command === 'indexar-archivo' || inputRuleState.command === 'indexar-archivos')) {
+        const chainState = splitCommandChainArgs(String(inputRuleState.argsText || ''));
         input.value = '';
         chat.draftText = '';
         try {
-          await handleIndexarArchivosCommand(chat, (indexarMatch[1] || '').trim());
+          const summaryText = await handleIndexarArchivosCommand(chat, chainState.commandArgs);
+          if (chainState.chainText && summaryText) {
+            await handleIndexedResultChain(chat, chainState.chainText, summaryText);
+          }
         } catch (error) {
           const errorText = error && error.message ? error.message : 'No se pudo ejecutar /indexar-archivos.';
           chat.statusMessage = null;
@@ -7027,12 +7529,15 @@
         return;
       }
 
-      const indexarRecursivoMatch = text.match(/^\/indexar-archivos-recursivo(?:\s+([\s\S]*))?$/i);
-      if (indexarRecursivoMatch) {
+      if (inputRuleState.kind === 'command' && (inputRuleState.command === 'indexar-archivo-recursivo' || inputRuleState.command === 'indexar-archivos-recursivo')) {
+        const chainState = splitCommandChainArgs(String(inputRuleState.argsText || ''));
         input.value = '';
         chat.draftText = '';
         try {
-          await runIndexarArchivosRecursivo(chat, (indexarRecursivoMatch[1] || '').trim());
+          const summaryText = await runIndexarArchivosRecursivo(chat, chainState.commandArgs);
+          if (chainState.chainText && summaryText) {
+            await handleIndexedResultChain(chat, chainState.chainText, summaryText);
+          }
         } catch (error) {
           const errorText = error && error.message ? error.message : 'No se pudo ejecutar /indexar-archivos-recursivo.';
           chat.statusMessage = null;
@@ -7041,9 +7546,8 @@
         return;
       }
 
-      const pinFileMatch = text.match(/^\/anclar-archivo(?:\s+([\s\S]*))?$/i);
-      if (pinFileMatch) {
-        const mentionText = (pinFileMatch[1] || '').trim();
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'anclar-archivo') {
+        const mentionText = String(inputRuleState.argsText || '').trim();
         if (!mentionText) {
           setTemporaryChatStatus(chat, 'Debes mencionar un archivo para anclarlo.', 4200);
           input.value = '';
@@ -7065,9 +7569,21 @@
         return;
       }
 
-      const previewMatch = text.match(/^\/preview(?:\s+([\s\S]*))?$/i);
-      if (previewMatch) {
-        const mentionText = (previewMatch[1] || '').trim();
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'branch') {
+        input.value = '';
+        chat.draftText = '';
+        try {
+          await handleBranchChatCommand(chat, String(inputRuleState.argsText || '').trim());
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /branch.';
+          chat.statusMessage = null;
+          setTemporaryChatStatus(chat, errorText, 4200);
+        }
+        return;
+      }
+
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'preview') {
+        const mentionText = String(inputRuleState.argsText || '').trim();
         input.value = '';
         chat.draftText = '';
         if (!mentionText || !/^@([^\s@]+)$/.test(mentionText)) {
@@ -7083,14 +7599,23 @@
         return;
       }
 
+      if (inputRuleState.kind === 'chain') {
+        const chain = parseChainSyntax(text);
+        if (isSilentContextChain(chain)) {
+          input.value = '';
+          chat.draftText = '';
+          await executeChainedStagesFromResult(chat, text, '');
+          return;
+        }
+      }
+
       if (chat.editingIndex != null) {
         chat.messages = chat.messages.slice(0, chat.editingIndex);
         chat.editingIndex = null;
       }
 
-      const singleMentionMatch = text.trim().match(/^@([^\s@]+)$/);
-      if (singleMentionMatch) {
-        const localFile = await resolveFileByMention(chat, singleMentionMatch[1]);
+      if (inputRuleState.kind === 'single-mention') {
+        const localFile = await resolveFileByMention(chat, inputRuleState.mention);
         if (localFile) {
           chat.messages.push(buildLocalFilePreviewMessage(localFile));
           chat.attachment = null;
@@ -7138,7 +7663,7 @@
       saveChatToStorage(chat);
       renderChats();
 
-      if (parseChainSyntax(text)) {
+      if (inputRuleState.kind === 'chain') {
         await executeChainedMessage(chat, text, userMessage);
         return;
       }
