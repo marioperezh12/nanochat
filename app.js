@@ -965,6 +965,25 @@
       return formatMarkdown(text).replace('class="code-block-wrap', 'class="code-block-wrap index-result-code-block');
     }
 
+    function buildRecursiveIndexSectionsDisplay(sections) {
+      const items = Array.isArray(sections) ? sections : [];
+      const totalIndexed = items.reduce((sum, section) => sum + (Number(section?.indexedCount) || 0), 0);
+      const header = '<div class="index-result-summary">Archivos indexados ' + totalIndexed + '</div>';
+      return header + items.map((section, index) => {
+        const title = escapeHtml(String(section?.label || 'archivo'));
+        const code = escapeHtml(String(section?.summaryText || ''));
+        return '<div class="index-result-section" data-index-section="' + index + '">'
+          + '<button type="button" class="index-result-toggle" aria-expanded="false" data-index-toggle="' + index + '">'
+          + '<span class="index-result-toggle-label">' + title + '</span>'
+          + '<span class="index-result-toggle-icon">&#9660;</span>'
+          + '</button>'
+          + '<div class="index-result-section-body" hidden>'
+          + '<div class="code-block-wrap index-result-code-block"><pre class="code-block"><code>' + code + '</code></pre></div>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
     function normalizeProjectPath(value) {
       return String(value || '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
     }
@@ -1023,6 +1042,38 @@
             return requested.some(token => name === token || path.endsWith('/' + token) || path.endsWith('\\' + token) || path.includes(token));
           })
         : entries;
+    }
+
+    function getRecursiveIndexTargets(chat, filterText) {
+      const raw = String(filterText || '').trim();
+      if (!raw) return { mode: 'missing', items: [] };
+
+      const entries = getIndexableFolderEntries(chat, '');
+      const tokens = raw
+        .split(/[\s,]+/g)
+        .map(item => item.trim())
+        .filter(Boolean);
+
+      const patternToken = tokens.find(token => /^@\*\.[^/\s,]+$/i.test(token));
+      if (patternToken) {
+        const suffix = patternToken.slice(3).toLowerCase();
+        const matched = entries.filter(entry => String(entry.name || '').toLowerCase().endsWith('.' + suffix));
+        return {
+          mode: 'pattern',
+          items: matched.map(entry => ({
+            label: String(entry.path || entry.name || ''),
+            filterText: '@' + String(entry.path || entry.name || '')
+          }))
+        };
+      }
+
+      return {
+        mode: 'direct',
+        items: [{
+          label: raw,
+          filterText: raw
+        }]
+      };
     }
 
     async function readIndexableFolderEntries(chat, entries) {
@@ -4042,15 +4093,36 @@
         return;
       }
 
-      const graph = await buildRecursiveIndexGraph(chat, filterText);
-      const summaryText = buildIndexTreeSummary(graph);
-      const codeBlockText = '```text\n' + summaryText + '\n```';
+      const targetPlan = getRecursiveIndexTargets(chat, filterText);
+      if (targetPlan.mode === 'missing') {
+        setTemporaryChatStatus(chat, 'Debe indicar un archivo para indexar.', 4200);
+        return;
+      }
+      if (!targetPlan.items.length) {
+        setTemporaryChatStatus(chat, 'No encontré archivos que coincidan con ese patrón.', 4200);
+        return;
+      }
+
+      const sections = [];
+      for (const item of targetPlan.items) {
+        const graph = await buildRecursiveIndexGraph(chat, item.filterText);
+        const summaryText = buildIndexTreeSummary(graph);
+        const indexedCount = Array.isArray(graph?.files) ? graph.files.length : 0;
+        sections.push({
+          label: item.label,
+          summaryText,
+          indexedCount
+        });
+      }
+      const totalIndexed = sections.reduce((sum, section) => sum + (Number(section?.indexedCount) || 0), 0);
+      const finalText = 'Archivos indexados ' + totalIndexed + '\n\n' + sections.map(section => section.label + '\n```text\n' + section.summaryText + '\n```').join('\n\n');
       const replyMessage = {
         role: 'assistant',
-        content: codeBlockText,
-        display: formatIndexResultMarkdown(codeBlockText),
-        rawText: summaryText,
-        isIndexResult: true
+        content: finalText,
+        display: buildRecursiveIndexSectionsDisplay(sections),
+        rawText: finalText,
+        isIndexResult: true,
+        isRecursiveIndexResult: true
       };
       chat.messages.push(replyMessage);
       saveChatToStorage(chat);
@@ -5294,6 +5366,7 @@
 
         const panelBodyEl = panel.querySelector('.panel-body');
         panelBodyEl.addEventListener('click', async (event) => {
+          const indexToggleBtn = event.target.closest('.index-result-toggle');
           const editBtn = event.target.closest('.msg-edit');
           const copyBtn = event.target.closest('.msg-copy');
           const codeCopyBtn = event.target.closest('.code-copy');
@@ -5308,6 +5381,18 @@
           const replicateContextBtn = event.target.closest('.msg-replicate-context');
           const contextRemoveBtn = event.target.closest('.context-remove-btn');
           const truncEl = event.target.closest('.message-content.truncatable');
+          if (indexToggleBtn) {
+            event.stopPropagation();
+            const section = indexToggleBtn.closest('.index-result-section');
+            const body = section ? section.querySelector('.index-result-section-body') : null;
+            const icon = indexToggleBtn.querySelector('.index-result-toggle-icon');
+            if (!section || !body || !icon) return;
+            const willExpand = body.hidden;
+            body.hidden = !willExpand ? true : false;
+            indexToggleBtn.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+            icon.innerHTML = willExpand ? '&#9650;' : '&#9660;';
+            return;
+          }
           if (attachmentRemoveBtn) {
             event.stopPropagation();
             chat.attachment = null;
@@ -5966,7 +6051,7 @@
           const restored = await folderBrowser.restoreDirectorySelection(storageKey(chat.storageId || chat.name));
           if (!restored) return;
           chat.folderSelection = restored;
-          chat.folderPanelOpen = true;
+          chat.folderPanelOpen = false;
         }));
       }
       dockedSaved.forEach(item => {
