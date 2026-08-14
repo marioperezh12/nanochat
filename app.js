@@ -3269,6 +3269,7 @@
         + '<button type="button" class="console-item panzoom-exclude" data-command="branch">/branch<span class="console-item-desc">Crea un chat Branch derivado del actual</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="limpiar">/limpiar<span class="console-item-desc">Elimina todos los mensajes de la versión actual sin borrar el contexto</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="lienzo">/lienzo<span class="console-item-desc">Abre Workspace Three y coloca el chat actual en el lienzo</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -4815,6 +4816,8 @@
         handlePreviewCommand(chat);
       } else if (command === 'limpiar') {
         handleLimpiarCommand(chat);
+      } else if (command === 'lienzo') {
+        handleLienzoCommand(chat);
       } else if (command === 'indexar-archivo' || command === 'indexar-archivos') {
         handleIndexarArchivosCommand(chat);
       } else if (command === 'indexar-archivo-recursivo' || command === 'indexar-archivos-recursivo') {
@@ -4877,6 +4880,51 @@
       chat.statusMessage = null;
       saveChatToStorage(chat);
       renderChats();
+    }
+
+    function ensureWorkspaceThreeChatNode(chat) {
+      if (!chat?.id) return null;
+      const existingState = workspaceThreeMiniChats.find(state => state && state.ownerChatId === chat.id && !state.closed) || null;
+      if (existingState) {
+        bringWorkspaceThreeChatToFront(existingState);
+        return existingState;
+      }
+
+      const center = getWorkspaceThreeViewportCenter();
+      const canvasWidth = workspaceThreeCanvas?.clientWidth || 1800;
+      const canvasHeight = workspaceThreeCanvas?.clientHeight || 1200;
+      const seedMessages = (Array.isArray(chat.messages) ? chat.messages : [])
+        .filter(message => message && !message.typing && !message.isRule && !message.isPowerShell && !isTemporalMessageExpired(message))
+        .map(message => ({
+          role: message.role || 'assistant',
+          text: String(message.rawText || message.content || '').trim(),
+          htmlContent: message.display || null
+        }))
+        .filter(message => message.text);
+
+      return createWorkspaceThreeMiniChatNode({
+        id: 'workspace-three-chat-current-' + chat.id,
+        name: chat.name || 'Chat actual',
+        title: chat.name || 'Chat actual',
+        subtitle: 'Chat actual',
+        ownerChatId: chat.id,
+        ownerChatName: chat.name || null,
+        x: clampWorkspaceThreeValue(center.x - 260, 120, Math.max(120, canvasWidth - 520)),
+        y: clampWorkspaceThreeValue(center.y - 120, 120, Math.max(120, canvasHeight - 180)),
+        assistantPrefix: (chat.name || 'Chat actual') + ' recibió: ',
+        inputPlaceholder: 'Continúa este chat...',
+        contextMessage: chat.contextMessage ? cloneChatStateValue(chat.contextMessage) : null,
+        seedMessages
+      });
+    }
+
+    function handleLienzoCommand(chat) {
+      if (!chat?.id) return;
+      ensureWorkspaceThreeChatNode(chat);
+      setWorkspaceThreeActiveChat(chat.id);
+      requestAnimationFrame(() => {
+        workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     }
 
     async function handleIndexarArchivosCommand(chat, filterText) {
@@ -5640,6 +5688,7 @@
           + '<button type="button" class="console-item" data-command="branch">/branch<span class="console-item-desc">Crea un chat Branch derivado del actual</span></button>'
           + '<button type="button" class="console-item" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
           + '<button type="button" class="console-item" data-command="limpiar">/limpiar<span class="console-item-desc">Elimina todos los mensajes de la versión actual sin borrar el contexto</span></button>'
+          + '<button type="button" class="console-item" data-command="lienzo">/lienzo<span class="console-item-desc">Abre Workspace Three y coloca el chat actual en el lienzo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
           + '<button type="button" class="console-item" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -7431,6 +7480,13 @@
         input.value = '';
         chat.draftText = '';
         handleLimpiarCommand(chat);
+        return;
+      }
+
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'lienzo') {
+        input.value = '';
+        chat.draftText = '';
+        handleLienzoCommand(chat);
         return;
       }
 
