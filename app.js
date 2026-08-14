@@ -961,6 +961,133 @@
       return lines.join('\n');
     }
 
+    function normalizeProjectPath(value) {
+      return String(value || '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
+    }
+
+    function dirnameProjectPath(filePath) {
+      const normalized = normalizeProjectPath(filePath);
+      const index = normalized.lastIndexOf('/');
+      return index === -1 ? '' : normalized.slice(0, index);
+    }
+
+    function resolveRelativeProjectPath(fromFilePath, relativePath) {
+      const baseDir = dirnameProjectPath(fromFilePath);
+      const input = normalizeProjectPath(relativePath);
+      const seed = baseDir ? (baseDir + '/' + input) : input;
+      const parts = seed.split('/');
+      const out = [];
+      parts.forEach(part => {
+        if (!part || part === '.') return;
+        if (part === '..') {
+          if (out.length) out.pop();
+          return;
+        }
+        out.push(part);
+      });
+      return out.join('/');
+    }
+
+    function resolveIndexedEntryPath(entryByPath, fromFilePath, relativePath) {
+      const baseResolved = resolveRelativeProjectPath(fromFilePath, relativePath);
+      if (!baseResolved) return '';
+      const candidates = [
+        baseResolved,
+        baseResolved + '.ts',
+        baseResolved + '.js',
+        baseResolved + '.css',
+        baseResolved + '/index.ts',
+        baseResolved + '/index.js',
+        baseResolved + '/index.css'
+      ];
+      for (const candidate of candidates) {
+        if (entryByPath.has(candidate)) return candidate;
+      }
+      return '';
+    }
+
+    function getIndexableFolderEntries(chat, filterText) {
+      const entries = getChatFolderFileEntries(chat).filter(item => /\.(ts|js|css)$/i.test(String(item.path || item.name || '')));
+      const targets = String(filterText || '').trim();
+      const requested = targets
+        ? targets.split(/[\s,]+/g).map(item => item.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
+        : [];
+      return requested.length
+        ? entries.filter(item => {
+            const name = String(item.name || '').toLowerCase();
+            const path = String(item.path || '').toLowerCase();
+            return requested.some(token => name === token || path.endsWith('/' + token) || path.endsWith('\\' + token) || path.includes(token));
+          })
+        : entries;
+    }
+
+    async function readIndexableFolderEntries(chat, entries) {
+      const files = [];
+      for (const entry of entries) {
+        const filePath = entry.path || entry.name;
+        const fileRef = getLiveFolderFileReference(chat, filePath);
+        if (!fileRef) continue;
+        try {
+          const content = await readLiveFolderFileText(fileRef);
+          files.push({ name: entry.name || filePath, path: filePath, content });
+        } catch (error) {
+          files.push({ name: entry.name || filePath, path: filePath, content: '' });
+        }
+      }
+      return files;
+    }
+
+    async function buildRecursiveIndexGraph(chat, filterText) {
+      const indexer = window.nanochatTsIndexer;
+      if (!indexer || typeof indexer.buildFunctionGraph !== 'function') {
+        throw new Error('No está disponible el indexador local.');
+      }
+
+      const allEntries = getIndexableFolderEntries(chat, '');
+      const entryByPath = new Map();
+      allEntries.forEach(entry => {
+        const path = normalizeProjectPath(entry.path || entry.name);
+        if (path) entryByPath.set(path, entry);
+      });
+
+      const initialEntries = getIndexableFolderEntries(chat, filterText);
+      if (!initialEntries.length) {
+        throw new Error('No encontré archivos indexables para ese filtro.');
+      }
+
+      const queue = initialEntries.map(entry => normalizeProjectPath(entry.path || entry.name)).filter(Boolean);
+      const visited = new Set();
+      const loadedFiles = [];
+
+      while (queue.length) {
+        const currentPath = queue.shift();
+        if (!currentPath || visited.has(currentPath)) continue;
+        visited.add(currentPath);
+        const entry = entryByPath.get(currentPath);
+        if (!entry) continue;
+        const files = await readIndexableFolderEntries(chat, [entry]);
+        const file = files[0];
+        if (!file) continue;
+        loadedFiles.push(file);
+
+        const graph = indexer.buildFunctionGraph([file], '');
+        const indexedFiles = Array.isArray(graph?.files) ? graph.files : [];
+        indexedFiles.forEach(indexedFile => {
+          const refs = Array.isArray(indexedFile?.refs) ? indexedFile.refs : [];
+          refs.forEach(ref => {
+            const source = String(ref?.source || '').trim();
+            if (!source) return;
+            const resolved = resolveIndexedEntryPath(entryByPath, file.path || currentPath, source);
+            if (resolved && entryByPath.has(resolved) && !visited.has(resolved)) {
+              queue.push(resolved);
+            }
+          });
+        });
+      }
+
+      return indexer.buildFunctionGraph(loadedFiles, '');
+    }
+
     async function loadFolderFilePreview(chat, filePath) {
       if (!chat?.folderSelection?.tree || !filePath) return null;
       const node = findFolderTreeFileNode(chat.folderSelection.tree, filePath);
@@ -1310,6 +1437,7 @@
         { name: 'contexto', path: 'contexto', desc: 'Fija un mensaje de contexto siempre visible al inicio del chat' },
         { name: 'anclar-archivo', path: 'anclar-archivo', desc: 'Escribe el comando y luego menciona un archivo para anclarlo' },
         { name: 'indexar-archivos', path: 'indexar-archivos', desc: 'Indexa archivos TypeScript, JavaScript o CSS de la carpeta' },
+        { name: 'indexar-archivos-recursivo', path: 'indexar-archivos-recursivo', desc: 'Indexa archivos y sigue refs locales sin repetir archivos ya resueltos' },
         { name: 'ramas-paralelas', path: 'ramas-paralelas', desc: 'Crea ramas hijas paralelas desde este chat' },
         { name: 'ramas-secuenciales', path: 'ramas-secuenciales', desc: 'Crea una cadena secuencial de ramas hacia la derecha' },
         { name: 'multi-ia', path: 'multi-ia', desc: 'Consulta varios motores con el mismo mensaje' },
@@ -3818,6 +3946,8 @@
         handleAnclarArchivoCommand(chat);
       } else if (command === 'indexar-archivos') {
         handleIndexarArchivosCommand(chat);
+      } else if (command === 'indexar-archivos-recursivo') {
+        handleIndexarArchivosRecursivoCommand(chat);
       }
     }
 
@@ -3858,36 +3988,12 @@
         return;
       }
 
-      const entries = getChatFolderFileEntries(chat).filter(item => /\.(ts|js|css)$/i.test(String(item.path || item.name || '')));
-      const targets = String(filterText || '').trim();
-      const requested = targets
-        ? targets.split(/[\s,]+/g).map(item => item.trim().replace(/^@/, '').toLowerCase()).filter(Boolean)
-        : [];
-      const filteredEntries = requested.length
-        ? entries.filter(item => {
-            const name = String(item.name || '').toLowerCase();
-            const path = String(item.path || '').toLowerCase();
-            return requested.some(token => name === token || path.endsWith('/' + token) || path.endsWith('\\' + token) || path.includes(token));
-          })
-        : entries;
-
+      const filteredEntries = getIndexableFolderEntries(chat, filterText);
       if (!filteredEntries.length) {
         setTemporaryChatStatus(chat, 'No encontré archivos indexables para ese filtro.', 4200);
         return;
       }
-
-      const files = [];
-      for (const entry of filteredEntries) {
-        const filePath = entry.path || entry.name;
-        const fileRef = getLiveFolderFileReference(chat, filePath);
-        if (!fileRef) continue;
-        try {
-          const content = await readLiveFolderFileText(fileRef);
-          files.push({ name: entry.name || filePath, path: filePath, content });
-        } catch (error) {
-          files.push({ name: entry.name || filePath, path: filePath, content: '' });
-        }
-      }
+      const files = await readIndexableFolderEntries(chat, filteredEntries);
 
       const indexer = window.nanochatTsIndexer;
       if (!indexer || typeof indexer.buildFunctionGraph !== 'function') {
@@ -3896,6 +4002,43 @@
       }
 
       const graph = indexer.buildFunctionGraph(files, filterText);
+      const summaryText = buildIndexTreeSummary(graph);
+      const codeBlockText = '```text\n' + summaryText + '\n```';
+      const replyMessage = {
+        role: 'assistant',
+        content: codeBlockText,
+        display: formatMarkdown(codeBlockText),
+        rawText: summaryText,
+        isIndexResult: true
+      };
+      chat.messages.push(replyMessage);
+      saveChatToStorage(chat);
+      renderChats();
+    }
+
+    function handleIndexarArchivosRecursivoCommand(chat) {
+      chat.draftText = '/indexar-archivos-recursivo ';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput || freshInput.disabled) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    async function runIndexarArchivosRecursivo(chat, filterText) {
+      const selection = chat?.folderSelection || null;
+      if (!selection) {
+        setTemporaryChatStatus(chat, 'Primero selecciona una carpeta para indexar.', 4200);
+        return;
+      }
+
+      const graph = await buildRecursiveIndexGraph(chat, filterText);
       const summaryText = buildIndexTreeSummary(graph);
       const codeBlockText = '```text\n' + summaryText + '\n```';
       const replyMessage = {
@@ -6574,6 +6717,20 @@
           await handleIndexarArchivosCommand(chat, (indexarMatch[1] || '').trim());
         } catch (error) {
           const errorText = error && error.message ? error.message : 'No se pudo ejecutar /indexar-archivos.';
+          chat.statusMessage = null;
+          setTemporaryChatStatus(chat, errorText, 4200);
+        }
+        return;
+      }
+
+      const indexarRecursivoMatch = text.match(/^\/indexar-archivos-recursivo(?:\s+([\s\S]*))?$/i);
+      if (indexarRecursivoMatch) {
+        input.value = '';
+        chat.draftText = '';
+        try {
+          await runIndexarArchivosRecursivo(chat, (indexarRecursivoMatch[1] || '').trim());
+        } catch (error) {
+          const errorText = error && error.message ? error.message : 'No se pudo ejecutar /indexar-archivos-recursivo.';
           chat.statusMessage = null;
           setTemporaryChatStatus(chat, errorText, 4200);
         }
