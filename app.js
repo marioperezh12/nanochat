@@ -1389,6 +1389,78 @@
       };
     }
 
+    function getChainableChatMessages(chat) {
+      return (Array.isArray(chat?.messages) ? chat.messages : [])
+        .filter(message => message && !message.typing && !message.isLocalPreviewResult && !isTemporalMessageExpired(message))
+        .filter(message => message.role === 'user' || message.role === 'assistant');
+    }
+
+    function getMessageSelectorEntries() {
+      return [
+        { key: 'last-user', label: 'Mi último mensaje' },
+        { key: 'last-assistant', label: 'Última respuesta de IA' },
+        { key: 'first-user', label: 'Mi primer mensaje' },
+        { key: 'first-assistant', label: 'Primera respuesta de IA' },
+        { key: 'all', label: 'Todos los mensajes' }
+      ];
+    }
+
+    function buildLocalMensajesMessage() {
+      const lines = getMessageSelectorEntries().map(item => item.key.padEnd(18, ' ') + item.label);
+      const content = lines.join('\n');
+      const rawText = 'Mensajes disponibles\n\n```text\n' + content + '\n```';
+      return {
+        role: 'assistant',
+        content: rawText,
+        display: '<div class="local-preview-title">Mensajes disponibles</div>' + formatMarkdown('```text\n' + content + '\n```'),
+        rawText,
+        isLocalPreviewResult: true,
+        isLocalContextResult: true
+      };
+    }
+
+    function parseMensajesCommandArgs(argsText) {
+      const source = String(argsText || '').trim();
+      const match = source.match(/^(?::([a-z-]+))?(?:\s+([\s\S]*))?$/i);
+      return {
+        selector: String(match?.[1] || '').trim().toLowerCase(),
+        remainder: String(match?.[2] || '').trim()
+      };
+    }
+
+    function resolveMensajesSelection(chat, selector) {
+      const normalized = String(selector || '').trim().toLowerCase();
+      const messages = getChainableChatMessages(chat);
+      if (!normalized) {
+        return { ok: false, error: 'Debes indicar un selector de /mensajes.' };
+      }
+      if (normalized === 'all') {
+        const content = messages
+          .map(message => {
+            const roleLabel = message.role === 'user' ? 'user' : 'assistant';
+            return '[' + roleLabel + ']\n' + String(message.rawText || message.content || '').trim();
+          })
+          .filter(Boolean)
+          .join('\n\n');
+        return { ok: true, result: content.trim(), count: messages.length };
+      }
+      const role = normalized.includes('user') ? 'user' : normalized.includes('assistant') ? 'assistant' : '';
+      const edge = normalized.startsWith('first-') ? 'first' : normalized.startsWith('last-') ? 'last' : '';
+      if (!role || !edge) {
+        return { ok: false, error: 'Selector de /mensajes no válido.' };
+      }
+      const filtered = messages.filter(message => message.role === role);
+      const picked = edge === 'first' ? filtered[0] : filtered[filtered.length - 1];
+      if (!picked) {
+        return { ok: true, result: '', count: 0 };
+      }
+      return {
+        ok: true,
+        result: String(picked.rawText || picked.content || '').trim(),
+        count: 1
+      };
+    }
+
     function appendToChatContext(chat, textToAppend) {
       const currentContextText = String(chat?.contextMessage?.rawText || chat?.contextMessage?.content || '').trim();
       const nextChunk = String(textToAppend || '').trim();
@@ -1419,17 +1491,88 @@
     }
 
     function extractChatTargetsFromText(text) {
-      const matches = [...String(text || '').matchAll(/#(?:"([^"]+)"|([^\s#]+(?:\s+[^\s#]+)*?))(?:\s|$)/g)];
-      return matches
-        .map(match => String(match[1] || match[2] || '').trim())
-        .filter(Boolean);
+      const source = String(text || '');
+      const matches = [];
+      const chatNames = chatState
+        .map(chat => String(chat?.name || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+
+      let index = 0;
+      while (index < source.length) {
+        const hashIndex = source.indexOf('#', index);
+        if (hashIndex === -1) break;
+
+        const quotedMatch = source.slice(hashIndex).match(/^#\"([^\"]+)\"/);
+        if (quotedMatch) {
+          matches.push(String(quotedMatch[1] || '').trim());
+          index = hashIndex + quotedMatch[0].length;
+          continue;
+        }
+
+        const remainder = source.slice(hashIndex + 1);
+        const matchedChatName = chatNames.find(name => remainder.toLowerCase().startsWith(name.toLowerCase()));
+        if (matchedChatName) {
+          matches.push(matchedChatName);
+          index = hashIndex + 1 + matchedChatName.length;
+          continue;
+        }
+
+        const fallbackMatch = remainder.match(/^([^\s#]+)/);
+        if (fallbackMatch) {
+          matches.push(String(fallbackMatch[1] || '').trim());
+          index = hashIndex + 1 + fallbackMatch[0].length;
+          continue;
+        }
+
+        index = hashIndex + 1;
+      }
+
+      return matches.filter(Boolean);
     }
 
     function stripChatTargetsFromText(text) {
-      return String(text || '')
-        .replace(/#(?:"([^"]+)"|([^\s#]+(?:\s+[^\s#]+)*?))(?:\s|$)/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const source = String(text || '');
+      const chatNames = chatState
+        .map(chat => String(chat?.name || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length);
+
+      let result = '';
+      let index = 0;
+      while (index < source.length) {
+        const hashIndex = source.indexOf('#', index);
+        if (hashIndex === -1) {
+          result += source.slice(index);
+          break;
+        }
+
+        result += source.slice(index, hashIndex);
+
+        const quotedMatch = source.slice(hashIndex).match(/^#\"([^\"]+)\"/);
+        if (quotedMatch) {
+          index = hashIndex + quotedMatch[0].length;
+          continue;
+        }
+
+        const remainder = source.slice(hashIndex + 1);
+        const matchedChatName = chatNames.find(name => remainder.toLowerCase().startsWith(name.toLowerCase()));
+        if (matchedChatName) {
+          index = hashIndex + 1 + matchedChatName.length;
+          continue;
+        }
+
+        const fallbackMatch = remainder.match(/^([^\s#]+)/);
+        if (fallbackMatch) {
+          index = hashIndex + 1 + fallbackMatch[0].length;
+          continue;
+        }
+
+        result += '#';
+        index = hashIndex + 1;
+      }
+
+      return result.replace(/\s+/g, ' ').trim();
     }
 
     function normalizeChainedActionText(text, hasTarget) {
@@ -1478,6 +1621,16 @@
         };
       }
 
+      const mensajesMatch = source.match(/^\/mensajes(?::([a-z-]+))?$/i);
+      if (mensajesMatch) {
+        const selection = resolveMensajesSelection(chat, mensajesMatch[1]);
+        return {
+          handled: true,
+          result: selection.ok ? String(selection.result || '').trim() : '',
+          kind: 'messages'
+        };
+      }
+
       return { handled: false, result: '' };
     }
 
@@ -1496,6 +1649,18 @@
         display: formatMarkdown('[Encadenamiento desde ' + sourceName + ']\n' + promptText),
         rawText: '[Encadenamiento desde ' + sourceName + ']\n' + promptText,
         isChainRelay: true
+      };
+    }
+
+    function buildDirectTransferredMessage(previousResult) {
+      const content = String(previousResult || '').trim() || '[Sin contenido]';
+      return {
+        role: 'assistant',
+        content,
+        display: formatMarkdown(content),
+        rawText: content,
+        isLocalPreviewResult: true,
+        isLocalContextResult: true
       };
     }
 
@@ -1595,12 +1760,6 @@
       const stages = parseActionChainStages(actionText);
       if (!stages.length) return false;
 
-      const activeKey = getEngineKey(selectedEngine);
-      const engineName = engineLabel(selectedEngine);
-      if (!activeKey) {
-        throw new Error('Conecta tu API key de ' + engineName + ' para responder.');
-      }
-
       let currentChat = startChat;
       let previousResult = String(initialResult || '').trim();
       let finalChat = startChat;
@@ -1619,11 +1778,15 @@
         if (targetName && !stageChat) {
           throw new Error('No encontré el chat destino #' + targetName + '.');
         }
-        const cleanedAction = normalizeChainedActionText(stripChatTargetsFromText(stageText) || stageText, Boolean(targetName));
+        const stageTextWithoutTargets = stripChatTargetsFromText(stageText);
+        const cleanedAction = normalizeChainedActionText(
+          stageTextWithoutTargets || (targetName ? '' : stageText),
+          Boolean(targetName)
+        );
         if (shouldDirectTransferChainStage(targetName, cleanedAction)) {
-          const relayMessage = buildChainRelayMessage(currentChat, previousResult);
-          if (stageChat.temporalMode) relayMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
-          stageChat.messages.push(relayMessage);
+          const transferredMessage = buildDirectTransferredMessage(previousResult);
+          if (stageChat.temporalMode) transferredMessage.expiresAt = Date.now() + TEMPORAL_MESSAGE_TTL;
+          stageChat.messages.push(transferredMessage);
           saveChatToStorage(stageChat);
           renderChats();
           currentChat = stageChat;
@@ -1664,6 +1827,11 @@
         }
 
         try {
+          const activeKey = getEngineKey(selectedEngine);
+          const engineName = engineLabel(selectedEngine);
+          if (!activeKey) {
+            throw new Error('Conecta tu API key de ' + engineName + ' para responder.');
+          }
           await sendPromptToChat(stageChat, cleanedAction, {
             displayText: cleanedAction,
             rawText: cleanedAction,
@@ -2085,6 +2253,13 @@
       if (triggerChar !== '@' && triggerChar !== '$' && triggerChar !== '/') return null;
       if (!isAutocompleteTriggerBoundary(beforeCaret, tokenStart)) return null;
       const query = beforeCaret.slice(tokenStart + 1);
+      if (triggerChar === '/' && /^mensajes\s*$/i.test(query)) {
+        return {
+          tokenStart,
+          triggerChar,
+          query: 'mensajes:'
+        };
+      }
       if (/\s/.test(query)) return null;
       return {
         tokenStart,
@@ -3087,11 +3262,13 @@
     function buildWorkspaceThreeChatMarkup(chatId, title, subtitle, placeholder) {
       const consoleMenuHtml = ''
         + '<button type="button" class="console-item panzoom-exclude" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="mensajes">/mensajes<span class="console-item-desc">Lista accesos rápidos a mensajes del chat y permite encadenarlos</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="branch">/branch<span class="console-item-desc">Crea un chat Branch derivado del actual</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
+        + '<button type="button" class="console-item panzoom-exclude" data-command="limpiar">/limpiar<span class="console-item-desc">Elimina todos los mensajes de la versión actual sin borrar el contexto</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas hijas paralelas desde este chat</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear una cadena secuencial de ramas hacia la derecha</span></button>'
         + '<button type="button" class="console-item panzoom-exclude" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -4624,6 +4801,8 @@
         renderChats();
       } else if (command === 'contexto') {
         handleContextoCommand(chat);
+      } else if (command === 'mensajes') {
+        handleMensajesCommand(chat);
       } else if (command === 'rule') {
         handleRuleCommand(chat);
       } else if (command === 'powershell') {
@@ -4634,6 +4813,8 @@
         void handleBranchChatCommand(chat, '');
       } else if (command === 'preview') {
         handlePreviewCommand(chat);
+      } else if (command === 'limpiar') {
+        handleLimpiarCommand(chat);
       } else if (command === 'indexar-archivo' || command === 'indexar-archivos') {
         handleIndexarArchivosCommand(chat);
       } else if (command === 'indexar-archivo-recursivo' || command === 'indexar-archivos-recursivo') {
@@ -4669,6 +4850,33 @@
           freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
         } catch (error) { }
       });
+    }
+
+    function handleMensajesCommand(chat) {
+      chat.draftText = '/mensajes:';
+      renderChats();
+      requestAnimationFrame(() => {
+        const freshInput = document.querySelector('.chat-panel[data-chat-id="' + chat.id + '"] .chat-message-input');
+        if (!freshInput) return;
+        freshInput.focus();
+        freshInput.value = chat.draftText;
+        freshInput.dispatchEvent(new Event('input', { bubbles: true }));
+        try {
+          freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+        } catch (error) { }
+      });
+    }
+
+    function handleLimpiarCommand(chat) {
+      chat.messages = [];
+      chat.pinnedIndices = [];
+      chat.expandedIndices = [];
+      chat.replyingToIndex = null;
+      chat.editingIndex = null;
+      chat.attachment = null;
+      chat.statusMessage = null;
+      saveChatToStorage(chat);
+      renderChats();
     }
 
     async function handleIndexarArchivosCommand(chat, filterText) {
@@ -5424,12 +5632,14 @@
         }
 
         const consoleMenuHtml = ''
-        + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="contexto">/contexto<span class="console-item-desc">Fija un mensaje de contexto siempre visible al inicio del chat</span></button>'
+          + '<button type="button" class="console-item" data-command="mensajes">/mensajes<span class="console-item-desc">Lista accesos rápidos a mensajes del chat y permite encadenarlos</span></button>'
           + '<button type="button" class="console-item" data-command="rule">>> regla<span class="console-item-desc">Inicia una regla de interpretación y enrutamiento</span></button>'
           + '<button type="button" class="console-item" data-command="powershell">>>> powershell<span class="console-item-desc">Ejecuta comandos PowerShell localmente</span></button>'
           + '<button type="button" class="console-item" data-command="anclar-archivo">/anclar-archivo<span class="console-item-desc">Escribe el comando y luego menciona un archivo para anclarlo</span></button>'
           + '<button type="button" class="console-item" data-command="branch">/branch<span class="console-item-desc">Crea un chat Branch derivado del actual</span></button>'
           + '<button type="button" class="console-item" data-command="preview">/preview<span class="console-item-desc">Carga un archivo mencionado en el panel de vista previa</span></button>'
+          + '<button type="button" class="console-item" data-command="limpiar">/limpiar<span class="console-item-desc">Elimina todos los mensajes de la versión actual sin borrar el contexto</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-paralelas">/ramas-paralelas<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en paralelo</span></button>'
           + '<button type="button" class="console-item" data-command="ramas-secuenciales">/ramas-secuenciales<span class="console-item-desc">Escribe el comando en la caja para crear ramas asociadas en secuencia</span></button>'
           + '<button type="button" class="console-item" data-command="multi-ia">/multi-ia<span class="console-item-desc">Escribe el comando en la caja para consultar varios motores con el mismo mensaje</span></button>'
@@ -7174,6 +7384,53 @@
         chat._contextScrollDone = false;
         saveChatToStorage(chat);
         renderChats();
+        return;
+      }
+
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'mensajes') {
+        const chainState = splitCommandChainArgs(String(inputRuleState.argsText || ''));
+        const mensajesState = parseMensajesCommandArgs(chainState.commandArgs);
+        input.value = '';
+        chat.draftText = '';
+        if (!mensajesState.selector) {
+          chat.messages.push(buildLocalMensajesMessage());
+          chat.focused = true;
+          chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+          saveChatToStorage(chat);
+          renderChats();
+          return;
+        }
+        const selection = resolveMensajesSelection(chat, mensajesState.selector);
+        if (!selection.ok) {
+          setTemporaryChatStatus(chat, selection.error || 'No se pudo resolver /mensajes.', 4200);
+          return;
+        }
+        if (chainState.chainText) {
+          await executeChainedStagesFromResult(chat, chainState.chainText, String(selection.result || '').trim());
+          return;
+        }
+        const selectedText = String(selection.result || '').trim() || '[Sin contenido]';
+        const title = '/mensajes:' + mensajesState.selector;
+        const rawText = title + '\n\n```text\n' + selectedText + '\n```';
+        chat.messages.push({
+          role: 'assistant',
+          content: rawText,
+          display: '<div class="local-preview-title">' + escapeHtml(title) + '</div>' + formatMarkdown('```text\n' + selectedText + '\n```'),
+          rawText,
+          isLocalPreviewResult: true,
+          isLocalContextResult: true
+        });
+        chat.focused = true;
+        chatState.forEach(item => { if (item.id !== chatId) item.focused = false; });
+        saveChatToStorage(chat);
+        renderChats();
+        return;
+      }
+
+      if (inputRuleState.kind === 'command' && inputRuleState.command === 'limpiar') {
+        input.value = '';
+        chat.draftText = '';
+        handleLimpiarCommand(chat);
         return;
       }
 
