@@ -1925,6 +1925,13 @@
       color: #b8c2cc;
     }
 
+    .message.index-result-message .code-block-wrap.index-result-code-block {
+      max-height: 50px;
+      overflow: auto;
+      padding-right: 6px;
+      scrollbar-width: thin;
+    }
+
     .scroll-to-bottom-btn {
       position: absolute;
       left: 50%;

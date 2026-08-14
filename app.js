@@ -961,6 +961,10 @@
       return lines.join('\n');
     }
 
+    function formatIndexResultMarkdown(text) {
+      return formatMarkdown(text).replace('class="code-block-wrap', 'class="code-block-wrap index-result-code-block');
+    }
+
     function normalizeProjectPath(value) {
       return String(value || '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '');
     }
@@ -4007,7 +4011,7 @@
       const replyMessage = {
         role: 'assistant',
         content: codeBlockText,
-        display: formatMarkdown(codeBlockText),
+        display: formatIndexResultMarkdown(codeBlockText),
         rawText: summaryText,
         isIndexResult: true
       };
@@ -4044,7 +4048,7 @@
       const replyMessage = {
         role: 'assistant',
         content: codeBlockText,
-        display: formatMarkdown(codeBlockText),
+        display: formatIndexResultMarkdown(codeBlockText),
         rawText: summaryText,
         isIndexResult: true
       };
@@ -6874,7 +6878,7 @@
     function formatMarkdown(text) {
       const codeBlocks = [];
       const tableBlocks = [];
-      const withPlaceholders = text.replace(/```([a-zA-Z0-9]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const withPlaceholders = text.replace(/(`{3,})([a-zA-Z0-9_-]*)[ \t]*\n?([\s\S]*?)\1/g, (match, fence, lang, code) => {
         codeBlocks.push({
           lang: String(lang || '').trim().toLowerCase(),
           raw: code.replace(/\n$/, '')
