@@ -224,6 +224,7 @@
     function syncWorkspaceThreeBranchFlags() {
       const ownerNames = new Set(
         workspaceThreeMiniChats
+          .filter(state => !(String(state?.id || '').indexOf('workspace-three-chat-current-') === 0))
           .map(state => getWorkspaceThreeOwnerChatName(state))
           .filter(Boolean)
       );
@@ -4921,6 +4922,8 @@
     function handleLienzoCommand(chat) {
       if (!chat?.id) return;
       ensureWorkspaceThreeChatNode(chat);
+      syncWorkspaceThreeBranchFlags();
+      saveChatToStorage(chat);
       setWorkspaceThreeActiveChat(chat.id);
       requestAnimationFrame(() => {
         workspaceThreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
